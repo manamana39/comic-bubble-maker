@@ -1,0 +1,10 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.env
+
+# Input & Output data (Gitには含めない、またはサンプルのみ保持)
+output/*
+!output/.gitkeep

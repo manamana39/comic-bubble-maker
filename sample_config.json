@@ -1,0 +1,20 @@
+{
+  "image_path": "input/sample_test.png",
+  "output_path": "output/sample_result.png",
+  "bubbles": [
+    {
+      "text": "ComfyUIから出力された画像に\nこうして吹き出しがつきます！",
+      "type": "normal",
+      "box": [0.08, 0.1, 0.42, 0.28],
+      "tail": [0.25, 0.58],
+      "font_size_ratio": 0.038
+    },
+    {
+      "text": "サイズ変更も\n台詞の修正も簡単だね！",
+      "type": "shout",
+      "box": [0.52, 0.12, 0.42, 0.26],
+      "tail": [0.75, 0.58],
+      "font_size_ratio": 0.038
+    }
+  ]
+}
