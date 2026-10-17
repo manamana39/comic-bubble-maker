@@ -8,3 +8,6 @@ venv/
 # Input & Output data (Gitには含めない、またはサンプルのみ保持)
 output/*
 !output/.gitkeep
+input/*
+!input/.gitkeep
+
