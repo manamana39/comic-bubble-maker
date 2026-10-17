@@ -1,0 +1,52 @@
+{
+  "image_path": "input/kuma_seishun.jpg",
+  "output_path": "output/kuma_seishun_verified.png",
+  "supersample_scale": 3,
+  "bubbles": [
+    {
+      "text": "<small>…がおー。</small>\n<big>怖いでしょ？</big>",
+      "type": "cloud",
+      "writing_mode": "vertical",
+      "font": "kiwi",
+      "center": [0.18, 0.22],
+      "tail": [0.22, 0.31],
+      "font_size_ratio": 0.022,
+      "border_width": 2.0,
+      "border_color": [75, 42, 52, 210],
+      "text_color": [88, 38, 50, 255],
+      "bg_color": [255, 246, 238],
+      "visibility_mode": "auto",
+      "bg_alpha": 0.20,
+      "text_halo": true,
+      "halo_color": [255, 248, 235, 190]
+    },
+    {
+      "text": "<big>怖ぇわけ</big>\n<big>ねぇだろ…</big>",
+      "type": "capsule",
+      "writing_mode": "vertical",
+      "font": "ud",
+      "center": [0.85, 0.07],
+      "tail": [0.73, 0.09],
+      "font_size_ratio": 0.020,
+      "border_width": 2.0,
+      "border_color": [42, 50, 72, 210],
+      "text_color": [30, 44, 72, 255],
+      "bg_color": [252, 246, 240],
+      "visibility_mode": "auto",
+      "bg_alpha": 0.20,
+      "text_halo": true,
+      "halo_color": [255, 248, 235, 190]
+    },
+    {
+      "text": "（…似合って\n　るなんて、\n　言えるわけ\n　ないだろ）",
+      "type": "floating",
+      "writing_mode": "vertical",
+      "font": "mincho",
+      "center": [0.52, 0.33],
+      "font_size_ratio": 0.014,
+      "text_color": [45, 35, 60, 255],
+      "text_halo": true,
+      "halo_color": [255, 245, 230, 230]
+    }
+  ]
+}

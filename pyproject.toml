@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "comic-bubble-maker"
+version = "1.0.0"
+description = "Intelligent Japanese Manga Speech Bubble & Floating Monologue Engine"
+readme = "README.md"
+requires-python = ">=3.8"
+license = {text = "MIT"}
+authors = [
+    {name = "Antigravity Team"}
+]
+dependencies = [
+    "Pillow>=10.0.0",
+    "numpy>=1.20.0"
+]
+
+[project.scripts]
+comic-bubble = "cli:main"
