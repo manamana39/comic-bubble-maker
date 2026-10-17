@@ -1,11 +1,12 @@
-# 💬 Comic Bubble Maker (漫画吹き出し・浮遊モノローグ合成エンジン)
+# 💬 Comic Bubble Maker (漫画吹き出し・浮遊モノローグ・オノマトペ合成エンジン)
 
 [![Python](https://img.shields.io/badge/Python-3.8%2B-blue.svg)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Verification](https://img.shields.io/badge/Verification-9%20Passed-brightgreen.svg)](output/verification_report.json)
+[![Verification](https://img.shields.io/badge/Verification-13%20Passed-brightgreen.svg)](output/verification_report.json)
 [![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)]()
+[![ComfyUI Ready](https://img.shields.io/badge/ComfyUI-Native%20Node%20Ready-orange.svg)](comfyui_node.py)
 
-ComfyUIやAI生成されたイラスト・漫画画像に対し、**キャラクターへの被りゼロ**・**縦書き組版**・**枠なし浮遊モノローグ**・**夜景自動コントラスト保護**を備えた高品質な吹き出しを合成する自動化パイプラインです。
+ComfyUIやAI生成されたイラスト・漫画画像に対し、**キャラクターへの被りゼロ**・**縦書き組版**・**枠なし浮遊モノローグ**・**漫画オノマトペ**・**叫び＆囁き吹き出し**・**夜景自動コントラスト保護**を備えたプロフェッショナルな漫画吹き出し合成エンジンです。
 
 ---
 
@@ -20,19 +21,30 @@ ComfyUIやAI生成されたイラスト・漫画画像に対し、**キャラク
    - 登場人物の「心の声」や情緒的な独白向けに、**吹き出し枠を一切描かず、文字のみを風景に溶け込ませて漂わせる**モードを完備。
    - 夕暮れや夜の街灯に合わせた光彩（Halo）を纏わせることで、背景の美しさを100%残したまま高い可読性を維持。
 
-3. **夜景・暗所での自動コントラスト判定 (Auto-Contrast Engine)**
+3. **漫画オノマトペ・描き文字 (`type: "sfx"` / `"onomatopoeia"`)**
+   - `ドキッ`, `ドンッ`, `ゴゴゴ…` などの迫力ある擬音・効果音をサポート。
+   - 角度回転（`angle: -14.0`）や多重フチ取り（`stroke_width`, `stroke_color`）によるプロ漫画レベルの表現が可能。
+
+4. **多彩な漫画吹き出し形状 (Rich Balloon Geometry)**
+   - **通常カプセル (`capsule`)**: 最も文字が綺麗に収まる角丸スーパー楕円。
+   - **モコモコ雲型 (`cloud`)**: 感情の高まりや思考表現。
+   - **叫び・爆発 (`scream` / `burst`)**: 驚き・激昂・叫び用のウニフラ星型ポリゴンとしっぽ。
+   - **囁き・ヒソヒソ (`whisper`)**: 点線・破線による小声表現。
+   - **スクエア枠 (`box`)**: 漫画の四角いナレーション・モノローグ枠。
+
+5. **夜景・暗所での自動コントラスト判定 (Auto-Contrast Engine)**
    - 吹き出し配置領域の背景輝度（Rec. 601）をリアルタイムにサンプリング。
    - 夜景や濃い影の上に配置された場合、透明度を `0.20 → 0.80` へ自動引き上げ、文字の埋没を完全に防止。
 
-4. **キャラクター干渉防止 (Zero Interference Layout)**
-   - 顔、髪、アホ毛、衣服、手足のセーフゾーンを厳守し、ネガティブスペース（余白・空・背景歩道）へ自動アラインメント。
+6. **ネガティブスペース自動探索 (Smart Auto-Placement)**
+   - `center: "auto"` を指定すると、輪郭・エッジ密度解析によりキャラクター（顔・身体）を自動検出し、空や背景などの安全な余白領域へ自動配置。
 
-5. **マルチプラットフォーム・フォントフォールバック**
+7. **ComfyUI ネイティブカスタムノード対応 (`comfyui_node.py`)**
+   - 本リポジトリをそのまま `ComfyUI/custom_nodes/` に配置するだけで、ComfyUIワークフロー内で `💬 Manga Speech Bubble & SFX` ノードとして即座に利用可能。
+
+8. **マルチプラットフォーム・フォントフォールバック**
    - キウイ丸、よもぎ、ゼン丸ゴシックなどの可愛い手書きフォントを自動認識。
-   - Windows (BIZ UDゴシック・明朝)、macOS (ヒラギノ)、Linux (Noto Sans/Serif CJK) に自動フォールバックするため、環境を問わずエラーなく動作。
-
-6. **3倍スーパーサンプリング (3x Lanczos Supersampling)**
-   - 超高解像度キャンバス上で幾何学計算・アンチエイリアス処理を行い、高品質Lanczosで縮小合成。
+   - Windows (BIZ UDゴシック・明朝)、macOS (ヒラギノ)、Linux (Noto Sans/Serif CJK) に自動フォールバック。
 
 ---
 
@@ -40,19 +52,25 @@ ComfyUIやAI生成されたイラスト・漫画画像に対し、**キャラク
 
 ```mermaid
 flowchart TD
-    A[入力画像 / JSON設定] --> B[models.py: Scene & Bubble Config]
-    B --> C[contrast.py: Auto-Contrast 分析]
-    C --> D{背景輝度と文字色の差}
-    D -- 暗い背景・夜景 --> E[不透明度を 0.80 に自動ブースト]
-    D -- 明るい空・高コントラスト --> F[自然な透明度 0.20 を維持]
-    E --> G[typography.py: 縦書きEMメトリクス & 円弧カッコ生成]
-    F --> G
-    G --> H{吹き出しタイプ}
-    H -- capsule / cloud / oval --> I[shapes.py: 幾何学ポリゴン & しっぽ描画]
-    H -- floating / monologue --> J[枠なし描画: 文字 + 光彩Halo]
-    I --> K[engine.py: 3倍スーパーサンプリング合成]
-    J --> K
-    K --> L[LANCZOS縮小 & RGB出力保存]
+    A[入力画像 / JSON設定 / ComfyUI Tensor] --> B[models.py: Scene & Bubble Config]
+    B --> C{center is auto?}
+    C -- Yes --> D[auto_layout.py: エッジ密度解析 & ネガティブスペース検出]
+    C -- No --> E[指定座標を採用]
+    D --> F[contrast.py: Auto-Contrast 分析]
+    E --> F
+    F --> G{背景輝度と文字色の差}
+    G -- 暗い背景・夜景 --> H[不透明度を 0.80 に自動ブースト]
+    G -- 明るい空・高コントラスト --> I[自然な透明度 0.20 を維持]
+    H --> J[typography.py: 縦書きEMメトリクス & 円弧カッコ生成]
+    I --> J
+    J --> K{吹き出しタイプ}
+    K -- capsule / cloud / scream / whisper / box --> L[shapes.py: 幾何学ポリゴン描画]
+    K -- floating / monologue --> M[枠なし描画: 文字 + 光彩Halo]
+    K -- sfx / onomatopoeia --> N[回転 & 極太フチ取り 描き文字]
+    L --> O[engine.py: 3倍スーパーサンプリング合成]
+    M --> O
+    N --> O
+    O --> P[LANCZOS縮小 & RGB出力保存]
 ```
 
 ---
@@ -77,19 +95,19 @@ python cli.py --image input/sample.jpg --text "…べ、別に。\n待ってな�
 
 # システムフォントの解決状態を確認
 python cli.py --list-fonts
+
+# 自動検証スイートを実行
+python cli.py --verify
 ```
 
 ---
 
 ## 🧪 CodeX / 自動検証スイート (Autonomous Verification)
 
-CodeXやCI/CD環境からワンクリックで全機能（ユニットテスト・実画像合成・フォント検出）を検証できます：
+CodeXやCI/CD環境からワンクリックで全機能（13のユニットテスト・実画像合成・フォント検出）を検証できます：
 
 ```bash
-# 検証スイートを実行
 python run_verification.py
-# または
-python cli.py --verify
 ```
 
 実行後、構造化された検証レポートが `output/verification_report.json` に出力されます：
@@ -98,7 +116,7 @@ python cli.py --verify
   "version": "1.0.0",
   "overall_status": "SUCCESS",
   "unit_tests": {
-    "tests_run": 9,
+    "tests_run": 13,
     "failures": 0,
     "errors": 0,
     "success": true
@@ -121,10 +139,10 @@ python cli.py --verify
   "bubbles": [
     {
       "text": "<small>…べ、別に。</small>\n<big>待ってなんか</big>\n<big>ないし…！</big>",
-      "type": "capsule",             // "capsule", "cloud", "oval", "box"
+      "type": "capsule",             // "capsule", "cloud", "scream", "whisper", "box"
       "writing_mode": "vertical",     // "vertical"
-      "font": "kiwi",                 // "kiwi", "yomogi", "zenmaru", "ud", "mincho"
-      "center": [0.13, 0.14],         // 相対座標 [X, Y] (0.0〜1.0)
+      "font": "kiwi",                 // "kiwi", "yomogi", "zenmaru", "ud", "mincho", "bold"
+      "center": [0.13, 0.14],         // 相対座標 [X, Y] (0.0〜1.0) または "auto"
       "tail": [0.28, 0.28],           // しっぽの先端座標
       "font_size_ratio": 0.021,       // 画像の高さに対する基準フォントサイズ比率
       "border_width": 2.0,            // 枠線の太さ
@@ -146,6 +164,17 @@ python cli.py --verify
       "text_color": [45, 35, 58, 255],
       "text_halo": true,
       "halo_color": [255, 250, 235, 240]
+    },
+    {
+      "text": "ドキッ",
+      "type": "sfx",                  // ★ 漫画オノマトペ・描き文字
+      "font": "bold",
+      "center": [0.29, 0.60],
+      "angle": -14.0,                 // 回転角度
+      "font_size_ratio": 0.048,
+      "text_color": [235, 65, 85, 255],
+      "stroke_width": 3.2,            // 外枠フチ取りの太さ
+      "stroke_color": [255, 255, 255, 255]
     }
   ]
 }
@@ -155,20 +184,15 @@ python cli.py --verify
 
 ## 🎨 ComfyUI 連携ガイド
 
-ComfyUIの出力フォルダを監視し、新しい画像が生成されたら自動でセリフ合成を行う場合は、CLIを外部プロセスノード（Custom Node）として呼び出すか、Pythonスクリプトから直接 `comic_bubble.render_scene` をインポートして連携可能です。
+ComfyUIの `custom_nodes/` ディレクトリに本リポジトリを配置するだけで、UI上に `💬 Manga Speech Bubble & SFX` ノードが追加されます。
 
-```python
-from comic_bubble import render_scene, SceneConfig, BubbleConfig
-
-# ComfyUIのPIL Image出力を直接パイプラインに渡せます
-scene = SceneConfig(
-    image_path="ComfyUI/output/ComfyUI_0001_.png",
-    bubbles=[
-        BubbleConfig(text="お疲れ様！", type="capsule", center=(0.2, 0.2)),
-        BubbleConfig(text="（…今日も頑張ったな）", type="floating", center=(0.8, 0.3))
-    ]
-)
-result_img = render_scene(scene)
+```
+ComfyUI/
+└── custom_nodes/
+    └── ComfyUI-Comic-Bubble/   <-- 本リポジトリを配置
+        ├── comfyui_node.py
+        ├── comic_bubble/
+        └── ...
 ```
 
 ---

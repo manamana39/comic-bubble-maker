@@ -40,7 +40,8 @@ def run_real_world_verification() -> Dict[str, Any]:
     print("[2/3] Performing Real-World Image Verification...")
     test_configs = [
         ("examples/park_night_sample.json", "output/park_night_verified.png"),
-        ("examples/kuma_seishun_sample.json", "output/kuma_seishun_verified.png")
+        ("examples/kuma_seishun_sample.json", "output/kuma_seishun_verified.png"),
+        ("examples/park_night_full_features.json", "output/park_night_full_features.png")
     ]
 
     rendered_results = []

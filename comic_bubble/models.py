@@ -28,6 +28,9 @@ class BubbleConfig:
     halo_color: Optional[Tuple[int, int, int, int]] = None
     padding_ratio_x: Optional[float] = None
     padding_ratio_y: Optional[float] = None
+    angle: float = 0.0  # Rotation angle in degrees (primarily for 'sfx' onomatopoeia)
+    stroke_width: float = 3.0  # Outer text stroke width (for 'sfx')
+    stroke_color: Tuple[int, int, int, int] = (255, 255, 255, 255)
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "BubbleConfig":
@@ -35,11 +38,21 @@ class BubbleConfig:
         if b_type == "monologue":
             # "monologue" defaults to borderless floating text
             b_type = "floating"
+        elif b_type == "burst":
+            b_type = "scream"
+        elif b_type == "onomatopoeia":
+            b_type = "sfx"
 
-        default_font = "mincho" if b_type in ("floating", "box") else "kiwi"
+        default_font = "mincho" if b_type in ("floating", "box") else ("bold" if b_type == "sfx" else "kiwi")
         font = data.get("font", default_font)
 
-        center = tuple(data["center"]) if "center" in data and data["center"] is not None else None
+        center_raw = data.get("center", None)
+        center = None
+        if isinstance(center_raw, (list, tuple)):
+            center = (float(center_raw[0]), float(center_raw[1]))
+        elif isinstance(center_raw, str):
+            center = center_raw.lower()  # e.g. "auto"
+
         box = tuple(data["box"]) if "box" in data and data["box"] is not None else None
         tail = tuple(data["tail"]) if "tail" in data and data["tail"] is not None else None
 
@@ -47,6 +60,7 @@ class BubbleConfig:
         text_color = tuple(data.get("text_color", [40, 35, 55, 255]))
         bg_color = tuple(data.get("bg_color", [255, 248, 242]))
         halo_color = tuple(data["halo_color"]) if "halo_color" in data and data["halo_color"] is not None else None
+        stroke_color = tuple(data.get("stroke_color", [255, 255, 255, 255]))
 
         return cls(
             text=data.get("text", ""),
@@ -67,6 +81,9 @@ class BubbleConfig:
             halo_color=halo_color,
             padding_ratio_x=float(data["padding_ratio_x"]) if "padding_ratio_x" in data else None,
             padding_ratio_y=float(data["padding_ratio_y"]) if "padding_ratio_y" in data else None,
+            angle=float(data.get("angle", 0.0)),
+            stroke_width=float(data.get("stroke_width", 3.0)),
+            stroke_color=stroke_color,
         )
 
 @dataclass

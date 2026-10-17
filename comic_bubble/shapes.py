@@ -181,3 +181,94 @@ def draw_thought_tail_circles(
         my = start_y + (ty - start_y) * r_ratio
         circle_bbox = (mx - r_size, my - r_size, mx + r_size, my + r_size)
         draw.ellipse(circle_bbox, fill=fill_color, outline=border_color, width=border_width)
+
+def generate_scream_polygon(
+    rect: Tuple[int, int, int, int],
+    tail: Optional[Tuple[int, int]] = None,
+    num_spikes: int = 18,
+    depth_ratio: float = 0.28
+) -> List[Tuple[float, float]]:
+    """
+    Generate an intense spiky scream / explosion balloon polygon (ウニフラ・叫び吹き出し).
+    Creates dramatic starburst spikes with optional directional tail spike.
+    """
+    x1, y1, x2, y2 = rect
+    cx = (x1 + x2) / 2.0
+    cy = (y1 + y2) / 2.0
+    rx = (x2 - x1) / 2.0
+    ry = (y2 - y1) / 2.0
+
+    poly = []
+    total_pts = num_spikes * 2
+
+    tail_angle = None
+    if tail:
+        tx, ty = tail
+        tail_angle = math.atan2(ty - cy, tx - cx)
+
+    best_spike_idx = None
+    best_diff = 999.0
+
+    for i in range(total_pts):
+        angle = i * (2.0 * math.pi / total_pts)
+        if i % 2 == 1 and tail_angle is not None:
+            diff = abs((angle - tail_angle + math.pi) % (2.0 * math.pi) - math.pi)
+            if diff < best_diff:
+                best_diff = diff
+                best_spike_idx = i
+
+    for i in range(total_pts):
+        angle = i * (2.0 * math.pi / total_pts)
+        if i == best_spike_idx and tail is not None:
+            # Directional explosion tail pointing towards character
+            poly.append((float(tail[0]), float(tail[1])))
+        elif i % 2 == 1:
+            r_scale = 1.0 + depth_ratio
+            px = cx + rx * math.cos(angle) * r_scale
+            py = cy + ry * math.sin(angle) * r_scale
+            poly.append((px, py))
+        else:
+            r_scale = 1.0 - depth_ratio * 0.45
+            px = cx + rx * math.cos(angle) * r_scale
+            py = cy + ry * math.sin(angle) * r_scale
+            poly.append((px, py))
+
+    return poly
+
+def draw_dashed_polygon(
+    draw: ImageDraw.ImageDraw,
+    points: List[Tuple[float, float]],
+    fill: Optional[Tuple[int, int, int, int]] = None,
+    outline: Tuple[int, int, int, int] = (50, 50, 50, 255),
+    width: int = 2,
+    dash_len: int = 14,
+    gap_len: int = 9
+):
+    """
+    Draw a polygon with dashed / dotted perimeter (囁き・ヒソヒソ吹き出し).
+    """
+    if fill:
+        draw.polygon(points, fill=fill)
+    if not outline or width <= 0:
+        return
+
+    num_pts = len(points)
+    for i in range(num_pts):
+        p1 = points[i]
+        p2 = points[(i + 1) % num_pts]
+        dx = p2[0] - p1[0]
+        dy = p2[1] - p1[1]
+        dist = math.hypot(dx, dy)
+        if dist == 0:
+            continue
+        ux = dx / dist
+        uy = dy / dist
+
+        cur = 0.0
+        while cur < dist:
+            seg_end = min(cur + dash_len, dist)
+            sp1 = (p1[0] + ux * cur, p1[1] + uy * cur)
+            sp2 = (p1[0] + ux * seg_end, p1[1] + uy * seg_end)
+            draw.line([sp1, sp2], fill=outline, width=width)
+            cur += dash_len + gap_len
+
