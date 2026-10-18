@@ -34,7 +34,10 @@ def render_scene(scene: SceneConfig) -> Image.Image:
     Render bubbles, floating monologues, and manga sound effects onto the base image.
     Uses 3x supersampling with Lanczos downsampling for crisp, professional anti-aliasing.
     """
-    base_img = Image.open(scene.image_path).convert("RGBA")
+    if isinstance(scene.image_path, Image.Image):
+        base_img = scene.image_path.convert("RGBA")
+    else:
+        base_img = Image.open(scene.image_path).convert("RGBA")
     w, h = base_img.size
     scale = scene.supersample_scale
 
