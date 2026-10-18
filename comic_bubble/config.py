@@ -17,7 +17,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "active_provider": "gemini",
     "gemini": {
         "api_key": "",
-        "model": "gemini-2.0-flash"
+        "model": "gemini-3.8-flash"
     },
     "openai_compatible": {
         "api_key": "",
@@ -47,11 +47,24 @@ def load_config() -> Dict[str, Any]:
         except Exception as e:
             print(f"Warning: Failed to read {CONFIG_FILE}: {e}")
 
+    # Auto-migrate deprecated models to gemini-3.8-flash
+    g_model = cfg.get("gemini", {}).get("model", "")
+    if g_model in ("gemini-2.5-flash", "gemini-2.0-flash", ""):
+        cfg["gemini"]["model"] = "gemini-3.8-flash"
+        save_config(cfg)
+
+    # Legacy migration: check top-level gemini_api_key
+    legacy_key = cfg.get("gemini_api_key", "").strip()
+    if legacy_key and not cfg["gemini"]["api_key"]:
+        cfg["gemini"]["api_key"] = legacy_key
+        save_config(cfg)
+
     # Fallback to environment variables if keys are empty
     if not cfg["gemini"]["api_key"]:
         env_gemini = os.environ.get("GEMINI_API_KEY", "").strip()
         if env_gemini:
             cfg["gemini"]["api_key"] = env_gemini
+            save_config(cfg)
 
     if not cfg["openai_compatible"]["api_key"]:
         env_openai = os.environ.get("OPENAI_API_KEY", "").strip()

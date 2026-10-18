@@ -155,7 +155,7 @@ def _parse_bubbles_json(data: Dict[str, Any]) -> Tuple[str, List[BubbleConfig]]:
 def generate_with_gemini(
     image: Image.Image,
     api_key: str,
-    model_name: str = "gemini-2.0-flash",
+    model_name: str = "gemini-3.8-flash",
     genre_hint: str = "自動"
 ) -> Tuple[str, List[BubbleConfig]]:
     """Generate dialogue using Google Gemini API."""
@@ -175,10 +175,12 @@ def generate_with_gemini(
 
     rgb_img = image.convert("RGB")
 
-    # Try primary model, fallback to gemini-1.5-flash if needed
-    models_to_try = [model_name]
-    if model_name != "gemini-1.5-flash":
-        models_to_try.append("gemini-1.5-flash")
+    # Try requested model first, then modern fallbacks
+    candidate_models = [model_name, "gemini-3.8-flash", "gemini-2.0-flash", "gemini-1.5-flash"]
+    models_to_try = []
+    for m in candidate_models:
+        if m and m not in models_to_try:
+            models_to_try.append(m)
 
     last_err = None
     for m in models_to_try:
@@ -202,12 +204,16 @@ def generate_with_gemini(
     raise last_err or RuntimeError("Gemini API call failed.")
 
 
-def test_gemini_connection(api_key: str, model_name: str = "gemini-2.0-flash") -> str:
+def test_gemini_connection(api_key: str, model_name: str = "gemini-3.8-flash") -> str:
     """Test connection to Gemini API by sending a simple ping."""
     from google import genai
     client = genai.Client(api_key=api_key.strip())
-    # Try lightweight test prompt
-    models_to_try = [model_name, "gemini-1.5-flash"]
+    candidate_models = [model_name, "gemini-3.8-flash", "gemini-2.0-flash", "gemini-1.5-flash"]
+    models_to_try = []
+    for m in candidate_models:
+        if m and m not in models_to_try:
+            models_to_try.append(m)
+
     for m in models_to_try:
         try:
             res = client.models.generate_content(model=m, contents="Hello")
@@ -377,7 +383,7 @@ def generate_scene_dialogue(
         return generate_with_gemini(
             image=image,
             api_key=g_cfg.get("api_key", ""),
-            model_name=g_cfg.get("model", "gemini-2.0-flash"),
+            model_name=g_cfg.get("model", "gemini-3.8-flash"),
             genre_hint=genre_hint
         )
     elif provider == "openai_compatible":

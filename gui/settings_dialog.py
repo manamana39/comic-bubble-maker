@@ -116,12 +116,13 @@ class AISettingsDialog(QDialog):
         # Model
         self.combo_gemini_model = QComboBox()
         self.combo_gemini_model.setEditable(True)
+        self.combo_gemini_model.addItem("gemini-3.8-flash (最新・推奨)", "gemini-3.8-flash")
         self.combo_gemini_model.addItem("gemini-2.0-flash", "gemini-2.0-flash")
         self.combo_gemini_model.addItem("gemini-1.5-flash", "gemini-1.5-flash")
         self.combo_gemini_model.addItem("gemini-2.0-pro", "gemini-2.0-pro")
         self.combo_gemini_model.addItem("gemini-1.5-pro", "gemini-1.5-pro")
 
-        saved_model = self.cfg["gemini"].get("model", "gemini-2.0-flash")
+        saved_model = self.cfg["gemini"].get("model", "gemini-3.8-flash")
         self.combo_gemini_model.setCurrentText(saved_model)
         form.addRow("モデル名:", self.combo_gemini_model)
 
