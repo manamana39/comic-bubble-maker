@@ -1,14 +1,9 @@
 @echo off
-chcp 65001 > nul
 title Comic Bubble Maker
-
-cd /d "%~dp0"
-
-echo [Comic Bubble Maker] アプリを起動しています...
-python comic_bubble_app.py %*
-
-if %ERRORLEVEL% NEQ 0 (
+cd /d "C:\Users\steav\.gemini\antigravity\scratch\comic-bubble-maker"
+"C:\Users\steav\AppData\Local\Programs\Python\Python312\python.exe" comic_bubble_app.py %*
+if errorlevel 1 (
     echo.
-    echo アプリの起動中にエラーが発生しました。
+    echo [ERROR] Application exited with an error.
     pause
 )

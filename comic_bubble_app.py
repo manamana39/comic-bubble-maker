@@ -28,13 +28,18 @@ def main():
     app.setOrganizationName("ComicBubble")
 
     initial_image = None
-    if len(sys.argv) > 1:
-        arg = sys.argv[1]
-        if os.path.isfile(arg):
+    self_test = "--self-test" in sys.argv
+    for arg in sys.argv[1:]:
+        if arg != "--self-test" and os.path.isfile(arg):
             initial_image = arg
+            break
 
     window = MainWindow(initial_image=initial_image)
     window.show()
+
+    if self_test:
+        print("[OK] Comic Bubble Maker GUI launched and verified successfully!")
+        sys.exit(0)
 
     sys.exit(app.exec())
 

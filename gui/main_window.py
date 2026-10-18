@@ -178,8 +178,13 @@ class MainWindow(QMainWindow):
         self.act_add_sfx.setShortcut(QKeySequence("Ctrl+E"))
         self.act_add_sfx.triggered.connect(self._add_sfx_bubble)
 
-        self.act_ai_auto = QAction("🤖 AI空き領域自動配置", self)
-        self.act_ai_auto.setToolTip("背景の空きスペースを自動解析して吹き出しを配置")
+        self.act_ai_dialogue = QAction("✨ AIセリフ自動生成 (Gemini)...", self)
+        self.act_ai_dialogue.setShortcut(QKeySequence("Ctrl+G"))
+        self.act_ai_dialogue.setToolTip("Geminiがイラストの表情・関係性を読み取り、最適なセリフ・モノローグ・オノマトペを自動配置")
+        self.act_ai_dialogue.triggered.connect(self._open_ai_dialogue_generator)
+
+        self.act_ai_auto = QAction("🤖 空き領域自動配置 (数理)", self)
+        self.act_ai_auto.setToolTip("背景の空きスペースを幾何学的に解析して吹き出しを配置")
         self.act_ai_auto.triggered.connect(self._ai_auto_placement)
 
         # View Actions
@@ -210,6 +215,7 @@ class MainWindow(QMainWindow):
         menu_edit.addAction(self.act_add_monologue)
         menu_edit.addAction(self.act_add_sfx)
         menu_edit.addSeparator()
+        menu_edit.addAction(self.act_ai_dialogue)
         menu_edit.addAction(self.act_ai_auto)
 
         # View Menu
@@ -235,12 +241,41 @@ class MainWindow(QMainWindow):
         tb.addAction(self.act_add_monologue)
         tb.addAction(self.act_add_sfx)
         tb.addSeparator()
-        tb.addAction(self.act_ai_auto)
+        tb.addAction(self.act_ai_dialogue)
         tb.addSeparator()
         tb.addAction(self.act_fit)
         tb.addAction(self.act_zoom_reset)
 
     # --- Slots & Handlers ---
+
+    def _open_ai_dialogue_generator(self):
+        """Open AI dialogue generation dialog."""
+        if not self.canvas.base_pil_image:
+            QMessageBox.information(self, "画像が必要です", "先にイラスト画像を読み込んでください。")
+            return
+
+        from .ai_dialog import AIDialogueDialog
+        dlg = AIDialogueDialog(self.canvas.base_pil_image, self)
+        if dlg.exec() and dlg.generated_bubbles:
+            # Check if user wants to keep or replace existing bubbles
+            if self.canvas.bubble_items:
+                res = QMessageBox.question(
+                    self,
+                    "既存の吹き出し",
+                    "既に配置されている吹き出しがあります。上書きして置き換えますか？\n（[いいえ]を押すと追加されます）",
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                    QMessageBox.StandardButton.Yes
+                )
+                if res == QMessageBox.StandardButton.Yes:
+                    for it in list(self.canvas.bubble_items):
+                        self.canvas.remove_bubble(it)
+
+            for cfg in dlg.generated_bubbles:
+                self.canvas.add_bubble(cfg)
+
+            self.status_bar.showMessage(
+                f"✨ AIがセリフを生成しました！ ({dlg.scene_description})", 6000
+            )
 
     def _open_image_dialog(self):
         fpath, _ = QFileDialog.getOpenFileName(
