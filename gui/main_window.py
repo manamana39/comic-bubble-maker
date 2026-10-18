@@ -178,10 +178,14 @@ class MainWindow(QMainWindow):
         self.act_add_sfx.setShortcut(QKeySequence("Ctrl+E"))
         self.act_add_sfx.triggered.connect(self._add_sfx_bubble)
 
-        self.act_ai_dialogue = QAction("✨ AIセリフ自動生成 (Gemini)...", self)
+        self.act_ai_dialogue = QAction("✨ AIセリフ自動生成...", self)
         self.act_ai_dialogue.setShortcut(QKeySequence("Ctrl+G"))
-        self.act_ai_dialogue.setToolTip("Geminiがイラストの表情・関係性を読み取り、最適なセリフ・モノローグ・オノマトペを自動配置")
+        self.act_ai_dialogue.setToolTip("AIがイラストの表情・関係性を読み取り、最適なセリフ・モノローグ・オノマトペを自動配置")
         self.act_ai_dialogue.triggered.connect(self._open_ai_dialogue_generator)
+
+        self.act_ai_settings = QAction("⚙️ AIプロバイダー・APIキー設定...", self)
+        self.act_ai_settings.setToolTip("Gemini、よそのクラウドAPI、ローカルLLM(Ollama)の切り替え・設定")
+        self.act_ai_settings.triggered.connect(self._open_ai_settings)
 
         self.act_ai_auto = QAction("🤖 空き領域自動配置 (数理)", self)
         self.act_ai_auto.setToolTip("背景の空きスペースを幾何学的に解析して吹き出しを配置")
@@ -218,6 +222,10 @@ class MainWindow(QMainWindow):
         menu_edit.addAction(self.act_ai_dialogue)
         menu_edit.addAction(self.act_ai_auto)
 
+        # Settings Menu
+        menu_settings = menubar.addMenu("設定 (&S)")
+        menu_settings.addAction(self.act_ai_settings)
+
         # View Menu
         menu_view = menubar.addMenu("表示 (&V)")
         menu_view.addAction(self.act_fit)
@@ -242,6 +250,7 @@ class MainWindow(QMainWindow):
         tb.addAction(self.act_add_sfx)
         tb.addSeparator()
         tb.addAction(self.act_ai_dialogue)
+        tb.addAction(self.act_ai_settings)
         tb.addSeparator()
         tb.addAction(self.act_fit)
         tb.addAction(self.act_zoom_reset)
@@ -276,6 +285,12 @@ class MainWindow(QMainWindow):
             self.status_bar.showMessage(
                 f"✨ AIがセリフを生成しました！ ({dlg.scene_description})", 6000
             )
+
+    def _open_ai_settings(self):
+        """Open multi-provider AI settings dialog."""
+        from .settings_dialog import AISettingsDialog
+        dlg = AISettingsDialog(self)
+        dlg.exec()
 
     def _open_image_dialog(self):
         fpath, _ = QFileDialog.getOpenFileName(
