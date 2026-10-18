@@ -58,10 +58,17 @@ class TestGuiApp(unittest.TestCase):
         win.inspector.txt_edit.setPlainText("手動入力テスト！")
         self.assertEqual(item.config.text, "手動入力テスト！")
 
-        # 4. Drag tail handle
+        # 4. Drag tail handle (orange circle)
         item.tail_handle.setPos(QPointF(80, 120))
-        item._on_tail_handle_moved(QPointF(80, 120))
+        item.on_tail_handle_moved(QPointF(80, 120))
         self.assertIsNotNone(item.config.tail)
+
+        # 4b. Test interactive resize handle drag
+        old_size_ratio = item.config.font_size_ratio
+        item.on_resize_font_size(0.035, is_final=True)
+        self.assertEqual(item.config.font_size_ratio, 0.035)
+        # Check that inspector slider synced
+        self.assertEqual(win.inspector.slider_size.value(), 35)
 
         # 5. Add floating monologue
         win._add_monologue_bubble()

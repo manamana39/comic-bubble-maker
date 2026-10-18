@@ -273,13 +273,34 @@ class BubbleInspectorPanel(QWidget):
 
         self.set_item(None)
 
+    def sync_from_item(self):
+        """Update inspector controls when item properties are changed externally (e.g. resize handles)."""
+        if not self.current_item or self._block_signals:
+            return
+        self._block_signals = True
+        cfg = self.current_item.config
+        self.spin_size.setValue(cfg.font_size_ratio)
+        self.slider_size.setValue(int(cfg.font_size_ratio * 1000))
+        self._block_signals = False
+
     def set_item(self, item: Optional[BubbleGraphicsItem]):
         """Bind inspector to the selected item or disable if None."""
+        if self.current_item and self.current_item != item:
+            try:
+                self.current_item.changed.disconnect(self.sync_from_item)
+            except Exception:
+                pass
+
         self.current_item = item
         if not item:
             self.setEnabled(False)
             self.lbl_title.setText("💬 吹き出しを選択してください")
             return
+
+        try:
+            item.changed.connect(self.sync_from_item)
+        except Exception:
+            pass
 
         self.setEnabled(True)
         self._block_signals = True

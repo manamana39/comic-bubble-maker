@@ -1,11 +1,15 @@
 """
 gui.bubble_item
 ~~~~~~~~~~~~~~~
-Interactive QGraphicsObject for speech bubbles with draggable position,
-selection bounding boxes, and an interactive draggable tail control handle.
+Interactive QGraphicsObject for comic speech bubbles.
+Supports:
+1. Dragging position on canvas
+2. Draggable tail handle (orange point) to direct speech tail to mouth/shoulder
+3. Draggable corner resize handles to adjust bubble and font size directly on canvas
 """
 
-from typing import Optional, Tuple
+import math
+from typing import Optional, Tuple, Dict
 from PySide6.QtCore import Qt, QRectF, QPointF, Signal
 from PySide6.QtGui import QPainter, QPen, QBrush, QColor, QCursor
 from PySide6.QtWidgets import QGraphicsObject, QGraphicsItem, QStyleOptionGraphicsItem, QWidget
@@ -16,34 +20,33 @@ from .bubble_renderer import render_single_bubble_local, pil_to_qpixmap
 
 class TailHandleItem(QGraphicsObject):
     """Draggable handle for adjusting speech bubble tail direction and length."""
-    
-    tail_moved = Signal(QPointF)
 
     def __init__(self, parent: "BubbleGraphicsItem"):
         super().__init__(parent)
-        self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsMovable, True)
-        self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemSendsGeometryChanges, True)
         self.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
-        self.setZValue(100)
-        self.radius = 7.0
+        self.setZValue(200)
+        self.radius = 8.0
         self.is_hovered = False
+        self.is_dragging = False
+        self._drag_start = QPointF()
         self.setAcceptHoverEvents(True)
 
     def boundingRect(self) -> QRectF:
-        r = self.radius + 3
+        r = self.radius + 6
         return QRectF(-r, -r, r * 2, r * 2)
 
     def paint(self, painter: QPainter, option: QStyleOptionGraphicsItem, widget: Optional[QWidget] = None):
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+
         # Guide dashed line from bubble center to handle
-        pen = QPen(QColor(255, 140, 0, 180), 1.5, Qt.PenStyle.DashLine)
+        pen = QPen(QColor(255, 140, 0, 200), 2.0, Qt.PenStyle.DashLine)
         painter.setPen(pen)
         painter.drawLine(QPointF(0, 0) - self.pos(), QPointF(0, 0))
 
         # Handle circle
-        fill = QColor(255, 165, 0, 240) if self.is_hovered else QColor(255, 120, 0, 220)
+        fill = QColor(255, 180, 0, 255) if (self.is_hovered or self.is_dragging) else QColor(255, 120, 0, 230)
         painter.setBrush(QBrush(fill))
-        painter.setPen(QPen(QColor(255, 255, 255), 2.0))
+        painter.setPen(QPen(QColor(255, 255, 255), 2.5))
         painter.drawEllipse(QPointF(0, 0), self.radius, self.radius)
 
     def hoverEnterEvent(self, event):
@@ -56,17 +59,113 @@ class TailHandleItem(QGraphicsObject):
         self.update()
         super().hoverLeaveEvent(event)
 
-    def itemChange(self, change: QGraphicsItem.GraphicsItemChange, value):
-        if change == QGraphicsItem.GraphicsItemChange.ItemPositionChange and self.scene():
-            new_pos = value
-            self.tail_moved.emit(new_pos)
-        return super().itemChange(change, value)
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.is_dragging = True
+            self._drag_start = event.pos()
+            event.accept()
+            return
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        if self.is_dragging:
+            delta = event.pos() - self._drag_start
+            new_pos = self.pos() + delta
+            self.setPos(new_pos)
+            self.parentItem().on_tail_handle_moved(new_pos)
+            event.accept()
+            return
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton and self.is_dragging:
+            self.is_dragging = False
+            self.parentItem().on_tail_handle_released(self.pos())
+            event.accept()
+            return
+        super().mouseReleaseEvent(event)
+
+
+class ResizeHandleItem(QGraphicsObject):
+    """Draggable handle at corners of the bubble for resizing font size / bubble dimensions."""
+
+    def __init__(self, parent: "BubbleGraphicsItem", corner: str):
+        super().__init__(parent)
+        self.corner = corner  # 'tl', 'tr', 'bl', 'br'
+        self.size = 8.0
+        self.is_hovered = False
+        self.is_dragging = False
+        self._initial_ratio = 0.024
+        self._initial_dist = 100.0
+        self.setZValue(150)
+        self.setAcceptHoverEvents(True)
+
+        if corner in ("br", "tl"):
+            self.setCursor(QCursor(Qt.CursorShape.SizeFDiagCursor))
+        else:
+            self.setCursor(QCursor(Qt.CursorShape.SizeBDiagCursor))
+
+    def boundingRect(self) -> QRectF:
+        s = self.size + 4
+        return QRectF(-s, -s, s * 2, s * 2)
+
+    def paint(self, painter: QPainter, option: QStyleOptionGraphicsItem, widget: Optional[QWidget] = None):
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        fill = QColor(0, 160, 255, 255) if (self.is_hovered or self.is_dragging) else QColor(0, 120, 215, 230)
+        painter.setBrush(QBrush(fill))
+        painter.setPen(QPen(QColor(255, 255, 255), 1.5))
+        painter.drawRect(QRectF(-self.size / 2, -self.size / 2, self.size, self.size))
+
+    def hoverEnterEvent(self, event):
+        self.is_hovered = True
+        self.update()
+        super().hoverEnterEvent(event)
+
+    def hoverLeaveEvent(self, event):
+        self.is_hovered = False
+        self.update()
+        super().hoverLeaveEvent(event)
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.is_dragging = True
+            parent = self.parentItem()
+            self._initial_ratio = parent.config.font_size_ratio
+            self._initial_dist = max(20.0, math.hypot(self.pos().x(), self.pos().y()))
+            event.accept()
+            return
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        if self.is_dragging:
+            parent = self.parentItem()
+            cur_local = self.mapToParent(event.pos())
+            cur_dist = max(15.0, math.hypot(cur_local.x(), cur_local.y()))
+            scale_factor = cur_dist / self._initial_dist
+            new_ratio = max(0.010, min(0.090, self._initial_ratio * scale_factor))
+            parent.on_resize_font_size(new_ratio, is_final=False)
+            event.accept()
+            return
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton and self.is_dragging:
+            self.is_dragging = False
+            parent = self.parentItem()
+            cur_local = self.mapToParent(event.pos())
+            cur_dist = max(15.0, math.hypot(cur_local.x(), cur_local.y()))
+            scale_factor = cur_dist / self._initial_dist
+            new_ratio = max(0.010, min(0.090, self._initial_ratio * scale_factor))
+            parent.on_resize_font_size(new_ratio, is_final=True)
+            event.accept()
+            return
+        super().mouseReleaseEvent(event)
 
 
 class BubbleGraphicsItem(QGraphicsObject):
     """
     Interactive QGraphicsObject representing a comic speech bubble on canvas.
-    Supports click selection, smooth dragging, tail handle manipulation, and live updates.
+    Supports click selection, smooth dragging, tail handle manipulation, and live resizing.
     """
 
     changed = Signal()
@@ -82,15 +181,22 @@ class BubbleGraphicsItem(QGraphicsObject):
         self.pixmap_offset = QPointF(0, 0)
         self.body_size = (100, 100)
 
-        # Enable dragging and selection
+        # Enable dragging and selection for the bubble body
         self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsMovable, True)
         self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsSelectable, True)
         self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemSendsGeometryChanges, True)
         self.setCursor(QCursor(Qt.CursorShape.SizeAllCursor))
 
-        # Tail handle
+        # Tail handle (orange circle)
         self.tail_handle = TailHandleItem(self)
-        self.tail_handle.tail_moved.connect(self._on_tail_handle_moved)
+
+        # 4 Corner Resize handles
+        self.resize_handles: Dict[str, ResizeHandleItem] = {
+            "tl": ResizeHandleItem(self, "tl"),
+            "tr": ResizeHandleItem(self, "tr"),
+            "bl": ResizeHandleItem(self, "bl"),
+            "br": ResizeHandleItem(self, "br"),
+        }
 
         # Initial placement
         if self.config.center:
@@ -109,12 +215,26 @@ class BubbleGraphicsItem(QGraphicsObject):
             self.tail_handle.setPos(local_tx, local_ty)
             self.tail_handle.setVisible(True)
         else:
-            self.tail_handle.setPos(60, 60)
+            self.tail_handle.setPos(-40, 80)
             self.tail_handle.setVisible(False)
 
+        self._update_resize_handles_visibility(False)
         self.update_rendering()
 
-    def update_rendering(self):
+    def _update_resize_handles_visibility(self, visible: bool):
+        for h in self.resize_handles.values():
+            h.setVisible(visible)
+
+    def _reposition_resize_handles(self):
+        bw, bh = self.body_size
+        hw = bw / 2.0 + 4
+        hh = bh / 2.0 + 4
+        self.resize_handles["tl"].setPos(-hw, -hh)
+        self.resize_handles["tr"].setPos(hw, -hh)
+        self.resize_handles["bl"].setPos(-hw, hh)
+        self.resize_handles["br"].setPos(hw, hh)
+
+    def update_rendering(self, scale: int = 2):
         """Re-render bubble pixmap based on current config and tail position."""
         self.prepareGeometryChange()
 
@@ -124,22 +244,38 @@ class BubbleGraphicsItem(QGraphicsObject):
         img, offset, body_size = render_single_bubble_local(
             self.config,
             img_h=self.canvas_h,
-            scale=2,
+            scale=scale,
             tail_local=tail_local
         )
 
         self.pixmap = pil_to_qpixmap(img)
         self.pixmap_offset = QPointF(offset[0], offset[1])
         self.body_size = body_size
+        self._reposition_resize_handles()
         self.update()
 
-    def _on_tail_handle_moved(self, local_pos: QPointF):
-        """Called when user drags the tail handle."""
-        # Update config tail in normalized coordinates
+    def on_tail_handle_moved(self, local_pos: QPointF):
+        """Called live as user drags the tail handle."""
         abs_x = self.x() + local_pos.x()
         abs_y = self.y() + local_pos.y()
         self.config.tail = (abs_x / self.canvas_w, abs_y / self.canvas_h)
-        self.update_rendering()
+        # Fast update during drag
+        self.update_rendering(scale=1)
+        self.changed.emit()
+
+    def on_tail_handle_released(self, local_pos: QPointF):
+        """Called when user finishes dragging tail handle."""
+        abs_x = self.x() + local_pos.x()
+        abs_y = self.y() + local_pos.y()
+        self.config.tail = (abs_x / self.canvas_w, abs_y / self.canvas_h)
+        # High-res update on release
+        self.update_rendering(scale=2)
+        self.changed.emit()
+
+    def on_resize_font_size(self, new_ratio: float, is_final: bool = False):
+        """Called when user drags any corner resize handle."""
+        self.config.font_size_ratio = new_ratio
+        self.update_rendering(scale=2 if is_final else 1)
         self.changed.emit()
 
     def set_has_tail(self, enable: bool):
@@ -147,7 +283,6 @@ class BubbleGraphicsItem(QGraphicsObject):
         self.tail_handle.setVisible(enable)
         if enable:
             if not self.config.tail:
-                # Default tail down-left towards character
                 self.tail_handle.setPos(-40, 80)
                 abs_x = self.x() - 40
                 abs_y = self.y() + 80
@@ -170,12 +305,14 @@ class BubbleGraphicsItem(QGraphicsObject):
     def boundingRect(self) -> QRectF:
         if not self.pixmap:
             return QRectF(-50, -50, 100, 100)
-        # Bounding rect covering pixmap and handles
         rect = QRectF(self.pixmap_offset.x(), self.pixmap_offset.y(), self.pixmap.width(), self.pixmap.height())
         if self.tail_handle.isVisible():
             handle_rect = self.tail_handle.mapRectToParent(self.tail_handle.boundingRect())
             rect = rect.united(handle_rect)
-        return rect.adjusted(-5, -5, 5, 5)
+        for h in self.resize_handles.values():
+            if h.isVisible():
+                rect = rect.united(h.mapRectToParent(h.boundingRect()))
+        return rect.adjusted(-6, -6, 6, 6)
 
     def paint(self, painter: QPainter, option: QStyleOptionGraphicsItem, widget: Optional[QWidget] = None):
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
@@ -185,26 +322,14 @@ class BubbleGraphicsItem(QGraphicsObject):
         if self.pixmap:
             painter.drawPixmap(self.pixmap_offset, self.pixmap)
 
-        # 2. Draw selection indicator if selected
+        # 2. Draw selection boundary if selected
         if self.isSelected():
             bw, bh = self.body_size
             body_rect = QRectF(-bw / 2, -bh / 2, bw, bh)
-            # Dashed blue bounding box around bubble body
             sel_pen = QPen(QColor(0, 120, 215, 200), 1.5, Qt.PenStyle.DashLine)
             painter.setPen(sel_pen)
             painter.setBrush(Qt.BrushStyle.NoBrush)
             painter.drawRoundedRect(body_rect.adjusted(-4, -4, 4, 4), 6, 6)
-
-            # Small corner anchors
-            anchor_brush = QBrush(QColor(0, 120, 215, 240))
-            painter.setPen(QPen(QColor(255, 255, 255), 1.0))
-            for pt in [
-                body_rect.topLeft() + QPointF(-4, -4),
-                body_rect.topRight() + QPointF(4, -4),
-                body_rect.bottomLeft() + QPointF(-4, 4),
-                body_rect.bottomRight() + QPointF(4, 4),
-            ]:
-                painter.drawRect(QRectF(pt.x() - 3, pt.y() - 3, 6, 6))
 
     def itemChange(self, change: QGraphicsItem.GraphicsItemChange, value):
         if change == QGraphicsItem.GraphicsItemChange.ItemPositionChange and self.scene():
@@ -212,6 +337,7 @@ class BubbleGraphicsItem(QGraphicsObject):
             self.changed.emit()
         elif change == QGraphicsItem.GraphicsItemChange.ItemSelectedChange:
             is_sel = bool(value)
+            self._update_resize_handles_visibility(is_sel)
             self.selected_changed.emit(is_sel)
             self.update()
         return super().itemChange(change, value)
