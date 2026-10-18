@@ -25,15 +25,17 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "model": "gpt-4o-mini"
     },
     "local_ollama": {
-        "base_url": "http://localhost:11434",
-        "model": "qwen2.5-vl:7b"
+        "api_key": "lm-studio",
+        "base_url": "http://localhost:1234/v1",
+        "model": "qwen3-vl-8b-nsfw-caption-v4.5"
     }
 }
 
 
 def load_config() -> Dict[str, Any]:
     """Load configuration dictionary from disk, merging with defaults."""
-    cfg = dict(DEFAULT_CONFIG)
+    import copy
+    cfg = copy.deepcopy(DEFAULT_CONFIG)
     if os.path.isfile(CONFIG_FILE):
         try:
             with open(CONFIG_FILE, "r", encoding="utf-8") as f:
@@ -47,10 +49,27 @@ def load_config() -> Dict[str, Any]:
         except Exception as e:
             print(f"Warning: Failed to read {CONFIG_FILE}: {e}")
 
-    # Auto-migrate deprecated models to gemini-3.8-flash
-    g_model = cfg.get("gemini", {}).get("model", "")
-    if g_model in ("gemini-2.5-flash", "gemini-2.0-flash", ""):
+    # Auto-migrate deprecated models or label-suffixed strings to gemini-3.8-flash
+    g_model = cfg.get("gemini", {}).get("model", "").strip()
+    if " " in g_model:
+        g_model = g_model.split()[0].strip()
+        cfg["gemini"]["model"] = g_model
+        save_config(cfg)
+    if (
+        not g_model
+        or g_model.startswith("gemini-1.5")
+        or g_model.startswith("gemini-2.0")
+        or g_model.startswith("gemini-2.5")
+    ):
         cfg["gemini"]["model"] = "gemini-3.8-flash"
+        save_config(cfg)
+
+    # Auto-migrate old default Ollama placeholder to LM Studio OpenAI-compatible default
+    local_cfg = cfg.get("local_ollama", {})
+    if local_cfg.get("base_url") == "http://localhost:11434" and local_cfg.get("model") == "qwen2.5-vl:7b":
+        cfg["local_ollama"]["base_url"] = "http://localhost:1234/v1"
+        cfg["local_ollama"]["model"] = "qwen3-vl-8b-nsfw-caption-v4.5"
+        cfg["local_ollama"].setdefault("api_key", "lm-studio")
         save_config(cfg)
 
     # Legacy migration: check top-level gemini_api_key

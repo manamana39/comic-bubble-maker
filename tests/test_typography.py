@@ -48,5 +48,25 @@ class TestTypography(unittest.TestCase):
             for ch, sc, f, cur_sz, bbox, ink_w, ink_h, adv in col:
                 self.assertGreater(adv, 0)
 
+    def test_auto_wrap_japanese_text(self):
+        from comic_bubble.typography import auto_wrap_japanese_text
+        long_s1 = "それよりこっち！ステンドグラスの向こう側も見てごらんよ"
+        wrapped1 = auto_wrap_japanese_text(long_s1)
+        lines1 = wrapped1.split("\n")
+        self.assertGreaterEqual(len(lines1), 2)
+        # Verify kinsoku: no line starts with small kana or punctuation
+        for l in lines1:
+            self.assertFalse(l.startswith("！"))
+            self.assertFalse(l.startswith("っ"))
+
+        long_s2 = "あ、あの…最近図書館の新しい小説が面白いって噂だったんだ"
+        wrapped2 = auto_wrap_japanese_text(long_s2)
+        lines2 = wrapped2.split("\n")
+        self.assertGreaterEqual(len(lines2), 3)
+
+        # Short text should remain unchanged
+        short_s = "はい、どうぞ！"
+        self.assertEqual(auto_wrap_japanese_text(short_s), short_s)
+
 if __name__ == "__main__":
     unittest.main()

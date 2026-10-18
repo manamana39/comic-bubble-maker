@@ -35,7 +35,36 @@ class TestGuiApp(unittest.TestCase):
         self.assertIsNotNone(win)
         self.assertIsNotNone(win.canvas)
         self.assertIsNotNone(win.inspector)
-        self.assertTrue(win.windowTitle().startswith("Comic Bubble Maker"))
+        self.assertEqual(win.splitter.count(), 2)
+        self.assertEqual(win.splitter.widget(0), win.canvas)
+        self.assertEqual(win.splitter.widget(1), win.inspector)
+        self.assertIn("Bubble Maker", win.windowTitle())
+
+    def test_ai_json_parsing_with_nulls(self):
+        """Test that _parse_bubbles_json handles null/None fields from Gemini schema without error."""
+        from comic_bubble.ai_generator import _parse_bubbles_json, _clean_gemini_model_name
+        self.assertEqual(_clean_gemini_model_name("gemini-1.5-flash"), "gemini-3.8-flash")
+        self.assertEqual(_clean_gemini_model_name("gemini-3.8-flash (最新・推奨)"), "gemini-3.8-flash")
+        sample = {
+            "scene_description": "テストシーン",
+            "bubbles": [
+                {
+                    "text": "セリフ",
+                    "type": "capsule",
+                    "center_x": 0.8,
+                    "center_y": 0.2,
+                    "has_tail": True,
+                    "tail_x": 0.65,
+                    "tail_y": 0.3,
+                    "font": "kiwi",
+                    "angle": None,
+                }
+            ]
+        }
+        desc, bubbles = _parse_bubbles_json(sample)
+        self.assertEqual(desc, "テストシーン")
+        self.assertEqual(len(bubbles), 1)
+        self.assertEqual(bubbles[0].angle, 0.0)
 
     def test_gui_load_and_add_bubble(self):
         """Test loading an image, adding a bubble, moving tail, and exporting."""
@@ -93,6 +122,85 @@ class TestGuiApp(unittest.TestCase):
         self.assertGreater(os.path.getsize(out_file), 10000)
         print("GUI integration test passed successfully! Export size:", os.path.getsize(out_file))
 
+    def test_dialogs_instantiation(self):
+        """Test that AIDialogueDialog and SFXPaletteDialog instantiate without missing imports."""
+        from PIL import Image
+        from gui.ai_dialog import AIDialogueDialog
+        from gui.sfx_palette import SFXPaletteDialog
+
+        dummy_img = Image.new("RGB", (200, 200), (255, 255, 255))
+        ai_dlg = AIDialogueDialog(dummy_img)
+        self.assertIsNotNone(ai_dlg.chk_nsfw)
+        self.assertIsNotNone(ai_dlg.chk_detect_existing)
+
+        sfx_dlg = SFXPaletteDialog()
+        self.assertIsNotNone(sfx_dlg)
+
+    def test_sfx_rotation_and_inspector_toggle(self):
+        """Test onomatopoeia rotation handle, inspector controls, and panel toggle."""
+        win = MainWindow()
+        win.canvas.load_image("input/test_01_infirmary.jpg")
+        
+        # Add SFX bubble
+        win._add_sfx_bubble()
+        sfx_item = win.canvas.bubble_items[-1]
+        self.assertEqual(sfx_item.config.type, "sfx")
+        self.assertTrue(sfx_item.isSelected())
+        self.assertTrue(sfx_item.rotate_handle.isVisible())
+        self.assertFalse(win.inspector.grp_sfx.isHidden())
+
+        # Test preset button
+        win.inspector._set_angle_preset(45)
+        self.assertEqual(sfx_item.config.angle, 45.0)
+        self.assertEqual(win.inspector.spin_angle.value(), 45)
+        self.assertEqual(win.inspector.slider_angle.value(), 45)
+
+        # Test on-canvas rotation handle trigger
+        sfx_item.on_rotate_angle(-30.0, is_final=True)
+        self.assertEqual(sfx_item.config.angle, -30.0)
+        win.inspector.sync_from_item()
+        self.assertEqual(win.inspector.spin_angle.value(), -30)
+
+        # Test toggle inspector panel action
+        self.assertFalse(win.inspector.isHidden())
+        win.act_toggle_inspector.setChecked(False)
+        self.assertTrue(win.inspector.isHidden())
+        win.act_toggle_inspector.setChecked(True)
+        self.assertFalse(win.inspector.isHidden())
+
+        # Test duplicate and remove actions
+        initial_count = len(win.canvas.bubble_items)
+        dup = win.canvas._duplicate_bubble(sfx_item)
+        self.assertEqual(len(win.canvas.bubble_items), initial_count + 1)
+        self.assertEqual(dup.config.angle, -30.0)
+
+        win.canvas.remove_bubble(dup)
+        self.assertEqual(len(win.canvas.bubble_items), initial_count)
+
+    def test_inspector_scroll_and_width(self):
+        """Test that the inspector scroll area stays enabled even when no item is selected and fits narrow widths."""
+        win = MainWindow()
+        win.resize(1000, 500)
+        win.show()
+        self.app.processEvents()
+
+        # Even with no bubble selected (set_item(None)), scroll area itself must remain enabled
+        win.inspector.set_item(None)
+        self.assertTrue(win.inspector.isEnabled())
+        self.assertTrue(win.inspector.scroll.isEnabled())
+        self.assertFalse(win.inspector.container.isEnabled())
+
+        # Container minimum width should be compact (< 280px) so it never clips horizontally
+        self.assertLess(win.inspector.container.minimumSizeHint().width(), 280)
+
+        # Vertical scrollbar should have a positive range on a 500px tall window
+        vbar = win.inspector.scroll.verticalScrollBar()
+        self.assertGreater(vbar.maximum(), 0)
+        vbar.setValue(80)
+        self.assertEqual(vbar.value(), 80)
+
 if __name__ == "__main__":
     unittest.main()
+
+
 

@@ -11,7 +11,7 @@ from typing import List, Tuple, Optional, Dict, Any, Union
 class BubbleConfig:
     """Configuration for an individual speech bubble or monologue."""
     text: str
-    type: str = "capsule"  # 'capsule', 'cloud', 'oval', 'box', 'floating', 'monologue'
+    type: str = "capsule"  # 'capsule', 'cloud', 'whisper', 'scream', 'oval', 'box', 'floating', 'none', 'sfx'
     writing_mode: str = "vertical"  # 'vertical' or 'horizontal'
     font: str = "kiwi"  # 'kiwi', 'yomogi', 'zenmaru', 'mincho', 'ud', 'maru', 'pop', etc.
     center: Optional[Tuple[float, float]] = None  # (x, y) normalized [0.0, 1.0] or pixel

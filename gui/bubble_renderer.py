@@ -115,17 +115,29 @@ def render_single_bubble_local(
     pad_x = bubble.padding_ratio_x
     pad_y = bubble.padding_ratio_y
 
+    num_cols = len(styled_lines)
+    # Ratio limiter for 1-column vertical text to prevent gigantic horizontal ballooning
+    ratio_mult = 0.58 if num_cols >= 2 else 0.28
+
     if b_type == "capsule":
-        bw = max(int(t_w * (pad_x if pad_x is not None else 2.05)), int(t_h * 0.58))
+        bw = max(int(t_w * (pad_x if pad_x is not None else 2.05)), int(t_h * ratio_mult))
+        if num_cols == 1:
+            bw = min(bw, int(t_w * 3.4))
         bh = int(t_h * (pad_y if pad_y is not None else 1.34))
     elif b_type == "cloud":
-        bw = max(int(t_w * (pad_x if pad_x is not None else 2.25)), int(t_h * 0.60))
+        bw = max(int(t_w * (pad_x if pad_x is not None else 2.25)), int(t_h * (0.60 if num_cols >= 2 else 0.30)))
+        if num_cols == 1:
+            bw = min(bw, int(t_w * 3.5))
         bh = int(t_h * (pad_y if pad_y is not None else 1.36))
     elif b_type == "scream":
-        bw = max(int(t_w * (pad_x if pad_x is not None else 2.30)), int(t_h * 0.68))
+        bw = max(int(t_w * (pad_x if pad_x is not None else 2.30)), int(t_h * (0.68 if num_cols >= 2 else 0.35)))
+        if num_cols == 1:
+            bw = min(bw, int(t_w * 3.6))
         bh = int(t_h * (pad_y if pad_y is not None else 1.42))
     elif b_type == "whisper":
-        bw = max(int(t_w * (pad_x if pad_x is not None else 2.05)), int(t_h * 0.58))
+        bw = max(int(t_w * (pad_x if pad_x is not None else 2.05)), int(t_h * ratio_mult))
+        if num_cols == 1:
+            bw = min(bw, int(t_w * 3.4))
         bh = int(t_h * (pad_y if pad_y is not None else 1.34))
     elif b_type == "box":
         bw = int(t_w * (pad_x if pad_x is not None else 1.45))
@@ -134,7 +146,9 @@ def render_single_bubble_local(
         bw = t_w + 20 * scale
         bh = t_h + 20 * scale
     else:  # oval
-        bw = max(int(t_w * (pad_x if pad_x is not None else 2.15)), int(t_h * 0.60))
+        bw = max(int(t_w * (pad_x if pad_x is not None else 2.15)), int(t_h * (0.60 if num_cols >= 2 else 0.30)))
+        if num_cols == 1:
+            bw = min(bw, int(t_w * 3.4))
         bh = int(t_h * (pad_y if pad_y is not None else 1.38))
 
     body_bx1 = -bw // 2

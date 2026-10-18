@@ -41,5 +41,26 @@ class TestSFX(unittest.TestCase):
         colored_pixels = np.sum(arr[:, :, 0] < 240)
         self.assertGreater(colored_pixels, 50)
 
+    def test_sfx_presets_structure(self):
+        from gui.sfx_palette import SFX_PRESETS
+        self.assertIn("💖 恋愛・胸キュン", SFX_PRESETS)
+        self.assertIn("🔞 艶音・吐息 (NSFW)", SFX_PRESETS)
+        self.assertGreater(len(SFX_PRESETS["💖 恋愛・胸キュン"]), 3)
+        for cat, items in SFX_PRESETS.items():
+            for item in items:
+                self.assertIn("text", item)
+                self.assertIn("font", item)
+                self.assertIn("angle", item)
+
+    def test_detect_white_bubble_patch(self):
+        from comic_bubble.ai_generator import detect_white_bubble_patch
+        # 1. Pure white patch (like an empty speech bubble)
+        white_img = Image.new("RGB", (300, 300), (255, 255, 255))
+        self.assertTrue(detect_white_bubble_patch(white_img, 0.5, 0.5))
+
+        # 2. Dark/textured patch (not an empty speech bubble)
+        dark_img = Image.new("RGB", (300, 300), (50, 60, 70))
+        self.assertFalse(detect_white_bubble_patch(dark_img, 0.5, 0.5))
+
 if __name__ == "__main__":
     unittest.main()

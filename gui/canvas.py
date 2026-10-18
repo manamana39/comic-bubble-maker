@@ -10,8 +10,11 @@ import os
 from typing import Optional, List
 from PIL import Image
 from PySide6.QtCore import Qt, QPointF, Signal, QRectF
-from PySide6.QtGui import QPainter, QPixmap, QImage, QWheelEvent, QMouseEvent, QKeyEvent, QDragEnterEvent, QDropEvent
-from PySide6.QtWidgets import QGraphicsView, QGraphicsScene, QGraphicsPixmapItem
+from PySide6.QtGui import (
+    QPainter, QPixmap, QImage, QWheelEvent, QMouseEvent,
+    QKeyEvent, QDragEnterEvent, QDropEvent, QContextMenuEvent
+)
+from PySide6.QtWidgets import QGraphicsView, QGraphicsScene, QGraphicsPixmapItem, QMenu
 
 from comic_bubble.models import BubbleConfig
 from .bubble_item import BubbleGraphicsItem
@@ -227,6 +230,109 @@ class ComicCanvasView(QGraphicsView):
                 event.accept()
                 return
         super().mouseDoubleClickEvent(event)
+
+    def contextMenuEvent(self, event: QContextMenuEvent):
+        """Right-click context menu for selected bubble or canvas background."""
+        scene_pos = self.mapToScene(event.pos())
+        clicked_item = self.scene.itemAt(scene_pos, self.transform())
+
+        # Check if right-clicked on a bubble item or handle
+        target_bubble = None
+        if isinstance(clicked_item, BubbleGraphicsItem):
+            target_bubble = clicked_item
+        elif hasattr(clicked_item, "parentItem") and isinstance(clicked_item.parentItem(), BubbleGraphicsItem):
+            target_bubble = clicked_item.parentItem()
+        elif self.current_selected_bubble:
+            if self.current_selected_bubble.sceneBoundingRect().contains(scene_pos):
+                target_bubble = self.current_selected_bubble
+
+        menu = QMenu(self)
+        if target_bubble:
+            if not target_bubble.isSelected():
+                self.scene.clearSelection()
+                target_bubble.setSelected(True)
+
+            act_del = menu.addAction("🗑️ 削除 (Delete)")
+            act_dup = menu.addAction("📋 複製 (Ctrl+D)")
+            menu.addSeparator()
+            act_front = menu.addAction("🔝 最前面へ移動")
+            act_back = menu.addAction("🔙 最背面へ移動")
+
+            act_reset_angle = None
+            if target_bubble.config.type in ("sfx", "floating") or abs(target_bubble.config.angle) > 0.01:
+                menu.addSeparator()
+                act_reset_angle = menu.addAction("🔄 角度を0°にリセット")
+
+            action = menu.exec(event.globalPos())
+            if action == act_del:
+                self.remove_bubble(target_bubble)
+            elif action == act_dup:
+                self._duplicate_bubble(target_bubble)
+            elif action == act_front:
+                self._bring_to_front(target_bubble)
+            elif action == act_back:
+                self._send_to_back(target_bubble)
+            elif act_reset_angle and action == act_reset_angle:
+                target_bubble.config.angle = 0.0
+                target_bubble.update_rendering()
+                target_bubble.changed.emit()
+            event.accept()
+            return
+        else:
+            # Right-clicked on empty canvas: quick-add options
+            if self.base_pil_image:
+                act_add_speech = menu.addAction("💬 ここに吹き出しを追加")
+                act_add_mono = menu.addAction("💭 ここにモノローグを追加")
+                act_add_sfx = menu.addAction("⚡ ここにオノマトペを追加")
+                action = menu.exec(event.globalPos())
+                if action == act_add_speech:
+                    self.add_bubble(center_pos=scene_pos)
+                elif action == act_add_mono:
+                    w, h = self.base_pil_image.size
+                    cfg = BubbleConfig(
+                        text="心の声…",
+                        type="floating",
+                        font="mincho",
+                        center=(scene_pos.x() / w, scene_pos.y() / h),
+                        font_size_ratio=0.024
+                    )
+                    self.add_bubble(config=cfg)
+                elif action == act_add_sfx:
+                    w, h = self.base_pil_image.size
+                    cfg = BubbleConfig(
+                        text="ドキッ",
+                        type="sfx",
+                        font="bold",
+                        center=(scene_pos.x() / w, scene_pos.y() / h),
+                        font_size_ratio=0.035,
+                        angle=-15.0
+                    )
+                    self.add_bubble(config=cfg)
+                event.accept()
+                return
+
+        super().contextMenuEvent(event)
+
+    def _duplicate_bubble(self, item: BubbleGraphicsItem):
+        import copy
+        new_cfg = copy.deepcopy(item.config)
+        cx = new_cfg.center[0] + 0.04 if new_cfg.center else 0.5
+        cy = new_cfg.center[1] + 0.04 if new_cfg.center else 0.5
+        new_cfg.center = (cx, cy)
+        if new_cfg.tail:
+            new_cfg.tail = (new_cfg.tail[0] + 0.04, new_cfg.tail[1] + 0.04)
+        return self.add_bubble(new_cfg)
+
+    def _bring_to_front(self, item: BubbleGraphicsItem):
+        max_z = max([it.zValue() for it in self.bubble_items], default=10)
+        item.setZValue(max_z + 1)
+        self.scene_modified.emit()
+
+    def _send_to_back(self, item: BubbleGraphicsItem):
+        min_z = min([it.zValue() for it in self.bubble_items], default=10)
+        item.setZValue(max(1, min_z - 1))
+        self.scene_modified.emit()
+
 
     def keyPressEvent(self, event: QKeyEvent):
         if event.key() == Qt.Key.Key_Space and not event.isAutoRepeat():

@@ -162,10 +162,83 @@ class ResizeHandleItem(QGraphicsObject):
         super().mouseReleaseEvent(event)
 
 
+class RotateHandleItem(QGraphicsObject):
+    """Draggable handle connected to the top of the bubble for intuitive on-canvas rotation."""
+
+    def __init__(self, parent: "BubbleGraphicsItem"):
+        super().__init__(parent)
+        self.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.setZValue(180)
+        self.radius = 7.0
+        self.is_hovered = False
+        self.is_dragging = False
+        self.setAcceptHoverEvents(True)
+
+    def boundingRect(self) -> QRectF:
+        r = self.radius + 6
+        return QRectF(-r, -r, r * 2, r * 2)
+
+    def paint(self, painter: QPainter, option: QStyleOptionGraphicsItem, widget: Optional[QWidget] = None):
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        fill = QColor(0, 215, 110, 255) if (self.is_hovered or self.is_dragging) else QColor(0, 175, 80, 230)
+        painter.setBrush(QBrush(fill))
+        painter.setPen(QPen(QColor(255, 255, 255), 2.0))
+        painter.drawEllipse(QPointF(0, 0), self.radius, self.radius)
+
+    def hoverEnterEvent(self, event):
+        self.is_hovered = True
+        self.update()
+        super().hoverEnterEvent(event)
+
+    def hoverLeaveEvent(self, event):
+        self.is_hovered = False
+        self.update()
+        super().hoverLeaveEvent(event)
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.is_dragging = True
+            event.accept()
+            return
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        if self.is_dragging:
+            parent = self.parentItem()
+            cur_local = parent.mapFromItem(self, event.pos())
+            # Angle in degrees from center (0,0); 0 is straight up, positive clockwise
+            angle_rad = math.atan2(cur_local.x(), -cur_local.y())
+            angle_deg = math.degrees(angle_rad)
+            if angle_deg > 180.0:
+                angle_deg -= 360.0
+            elif angle_deg < -180.0:
+                angle_deg += 360.0
+            parent.on_rotate_angle(round(angle_deg, 1), is_final=False)
+            event.accept()
+            return
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton and self.is_dragging:
+            self.is_dragging = False
+            parent = self.parentItem()
+            cur_local = parent.mapFromItem(self, event.pos())
+            angle_rad = math.atan2(cur_local.x(), -cur_local.y())
+            angle_deg = math.degrees(angle_rad)
+            if angle_deg > 180.0:
+                angle_deg -= 360.0
+            elif angle_deg < -180.0:
+                angle_deg += 360.0
+            parent.on_rotate_angle(round(angle_deg, 1), is_final=True)
+            event.accept()
+            return
+        super().mouseReleaseEvent(event)
+
+
 class BubbleGraphicsItem(QGraphicsObject):
     """
     Interactive QGraphicsObject representing a comic speech bubble on canvas.
-    Supports click selection, smooth dragging, tail handle manipulation, and live resizing.
+    Supports click selection, smooth dragging, tail handle manipulation, live resizing, and rotation.
     """
 
     changed = Signal()
@@ -189,6 +262,9 @@ class BubbleGraphicsItem(QGraphicsObject):
 
         # Tail handle (orange circle)
         self.tail_handle = TailHandleItem(self)
+
+        # Rotation handle (green circle)
+        self.rotate_handle = RotateHandleItem(self)
 
         # 4 Corner Resize handles
         self.resize_handles: Dict[str, ResizeHandleItem] = {
@@ -224,6 +300,9 @@ class BubbleGraphicsItem(QGraphicsObject):
     def _update_resize_handles_visibility(self, visible: bool):
         for h in self.resize_handles.values():
             h.setVisible(visible)
+        # Rotate handle is visible for SFX and floating text when selected
+        is_rotatable = self.config.type in ("sfx", "floating")
+        self.rotate_handle.setVisible(visible and is_rotatable)
 
     def _reposition_resize_handles(self):
         bw, bh = self.body_size
@@ -233,6 +312,14 @@ class BubbleGraphicsItem(QGraphicsObject):
         self.resize_handles["tr"].setPos(hw, -hh)
         self.resize_handles["bl"].setPos(-hw, hh)
         self.resize_handles["br"].setPos(hw, hh)
+
+        # Position rotation handle along rotated top axis
+        dist = max(bh / 2.0 + 26.0, 36.0)
+        rad = math.radians(self.config.angle)
+        rx = dist * math.sin(rad)
+        ry = -dist * math.cos(rad)
+        self.rotate_handle.setPos(rx, ry)
+
 
     def update_rendering(self, scale: int = 2):
         """Re-render bubble pixmap based on current config and tail position."""
@@ -278,6 +365,12 @@ class BubbleGraphicsItem(QGraphicsObject):
         self.update_rendering(scale=2 if is_final else 1)
         self.changed.emit()
 
+    def on_rotate_angle(self, new_angle: float, is_final: bool = False):
+        """Called when user drags the rotation handle."""
+        self.config.angle = new_angle
+        self.update_rendering(scale=2 if is_final else 1)
+        self.changed.emit()
+
     def set_has_tail(self, enable: bool):
         """Enable or disable speech tail."""
         self.tail_handle.setVisible(enable)
@@ -309,6 +402,9 @@ class BubbleGraphicsItem(QGraphicsObject):
         if self.tail_handle.isVisible():
             handle_rect = self.tail_handle.mapRectToParent(self.tail_handle.boundingRect())
             rect = rect.united(handle_rect)
+        if self.rotate_handle.isVisible():
+            r_rect = self.rotate_handle.mapRectToParent(self.rotate_handle.boundingRect())
+            rect = rect.united(r_rect)
         for h in self.resize_handles.values():
             if h.isVisible():
                 rect = rect.united(h.mapRectToParent(h.boundingRect()))
@@ -330,6 +426,15 @@ class BubbleGraphicsItem(QGraphicsObject):
             painter.setPen(sel_pen)
             painter.setBrush(Qt.BrushStyle.NoBrush)
             painter.drawRoundedRect(body_rect.adjusted(-4, -4, 4, 4), 6, 6)
+
+            # 3. Draw connector line to rotate handle if visible
+            if self.rotate_handle.isVisible():
+                rad = math.radians(self.config.angle)
+                edge_dist = min(bw, bh) / 2.0
+                start_pt = QPointF(edge_dist * math.sin(rad), -edge_dist * math.cos(rad))
+                pen = QPen(QColor(0, 200, 100, 180), 1.5, Qt.PenStyle.DashLine)
+                painter.setPen(pen)
+                painter.drawLine(start_pt, self.rotate_handle.pos())
 
     def itemChange(self, change: QGraphicsItem.GraphicsItemChange, value):
         if change == QGraphicsItem.GraphicsItemChange.ItemPositionChange and self.scene():

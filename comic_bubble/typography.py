@@ -247,3 +247,80 @@ def draw_vertical_measured(
             cur_y += adv + char_sp
 
         cur_col_right = col_x - col_spacing
+
+
+KINSOKU_HEADS = set("、。，．！？!?）)]｝}」』’\"ー―〜~…‥っッゃゅょぁぃぅぇぉャュョァィゥェォ")
+
+def auto_wrap_japanese_text(text: str, target_chars: int = 9, max_chars: int = 12) -> str:
+    """
+    Wrap Japanese text into balanced vertical lines (approx 7-12 chars per column).
+    Preserves existing newlines and respects inline tags like <big>, <small>.
+    Applies Japanese kinsoku shori (prohibits line breaks before punctuation/small kana).
+    """
+    if not text:
+        return text
+
+    existing_lines = text.split("\n")
+    # If all lines are already within reasonable manga vertical length, leave as is
+    if all(len(re.sub(r'<[^>]+>', '', l)) <= max_chars + 1 for l in existing_lines):
+        return text
+
+    wrapped_lines: List[str] = []
+
+    for line in existing_lines:
+        clean_len = len(re.sub(r'<[^>]+>', '', line))
+        if clean_len <= max_chars + 1:
+            wrapped_lines.append(line)
+            continue
+
+        p_parts = [p for p in re.split(r'([、。！？!?…~～]+)', line) if p]
+
+        sub_tokens = []
+        for p in p_parts:
+            if re.match(r'^[、。！？!?…~～]+$', p):
+                sub_tokens.append(p)
+            else:
+                parts2 = [p2 for p2 in re.split(r'((?:って|から|けど|ので|のに|だが|たら|なら|[はがをにへでとのも]))', p) if p2]
+                for p2 in parts2:
+                    clean_p2 = re.sub(r'<[^>]+>', '', p2)
+                    if len(clean_p2) > max_chars:
+                        for k in range(0, len(p2), target_chars):
+                            chunk = p2[k:k+target_chars]
+                            if chunk:
+                                sub_tokens.append(chunk)
+                    else:
+                        sub_tokens.append(p2)
+
+        cur_line = ""
+        for tok in sub_tokens:
+            cur_clean = len(re.sub(r'<[^>]+>', '', cur_line))
+            tok_clean = len(re.sub(r'<[^>]+>', '', tok))
+
+            if not cur_line:
+                cur_line = tok
+                continue
+
+            if re.match(r'^[、。！？!?…~～]+$', tok) or (tok and tok[0] in KINSOKU_HEADS):
+                cur_line += tok
+                continue
+
+            if cur_clean + tok_clean <= target_chars:
+                cur_line += tok
+            elif cur_clean < target_chars and (cur_clean + tok_clean <= max_chars):
+                cur_line += tok
+            else:
+                wrapped_lines.append(cur_line)
+                cur_line = tok
+
+        if cur_line:
+            if wrapped_lines and len(re.sub(r'<[^>]+>', '', cur_line)) <= 2:
+                prev_clean = len(re.sub(r'<[^>]+>', '', wrapped_lines[-1]))
+                if prev_clean + len(cur_line) <= max_chars + 3:
+                    wrapped_lines[-1] += cur_line
+                else:
+                    wrapped_lines.append(cur_line)
+            else:
+                wrapped_lines.append(cur_line)
+
+    return "\n".join(wrapped_lines)
+

@@ -21,6 +21,8 @@ def build():
         "--hidden-import=PySide6",
         "--hidden-import=PIL",
         "--hidden-import=numpy",
+        "--hidden-import=requests",
+        "--hidden-import=google.genai",
         "comic_bubble_app.py"
     ]
     print("Running command:", " ".join(cmd))

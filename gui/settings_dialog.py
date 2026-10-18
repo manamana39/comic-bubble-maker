@@ -42,7 +42,7 @@ class AISettingsDialog(QDialog):
         self.combo_active = QComboBox()
         self.combo_active.addItem("Google Gemini (クラウドAPI・最速・推奨)", "gemini")
         self.combo_active.addItem("よそのクラウド (OpenAI / DeepSeek / Groq)", "openai_compatible")
-        self.combo_active.addItem("完全ローカルLLM (Ollama / RTX 5060 Ti)", "local_ollama")
+        self.combo_active.addItem("完全ローカルLLM (LM Studio / OpenAI互換)", "local_ollama")
 
         cur_provider = self.cfg.get("active_provider", "gemini")
         idx = self.combo_active.findData(cur_provider)
@@ -60,7 +60,7 @@ class AISettingsDialog(QDialog):
 
         self.tabs.addTab(self.tab_gemini, "Google Gemini")
         self.tabs.addTab(self.tab_openai, "よそのクラウド (OpenAI互換)")
-        self.tabs.addTab(self.tab_ollama, "ローカルLLM (Ollama)")
+        self.tabs.addTab(self.tab_ollama, "ローカルLLM (LM Studio)")
         main_layout.addWidget(self.tabs)
 
         # Sync tab selection with active provider
@@ -116,13 +116,12 @@ class AISettingsDialog(QDialog):
         # Model
         self.combo_gemini_model = QComboBox()
         self.combo_gemini_model.setEditable(True)
-        self.combo_gemini_model.addItem("gemini-3.8-flash (最新・推奨)", "gemini-3.8-flash")
-        self.combo_gemini_model.addItem("gemini-2.0-flash", "gemini-2.0-flash")
-        self.combo_gemini_model.addItem("gemini-1.5-flash", "gemini-1.5-flash")
-        self.combo_gemini_model.addItem("gemini-2.0-pro", "gemini-2.0-pro")
-        self.combo_gemini_model.addItem("gemini-1.5-pro", "gemini-1.5-pro")
+        self.combo_gemini_model.addItem("gemini-3.8-flash", "gemini-3.8-flash")
+        self.combo_gemini_model.addItem("gemini-4-argon", "gemini-4-argon")
+        self.combo_gemini_model.addItem("gemini-3.5-flash-lite", "gemini-3.5-flash-lite")
+        self.combo_gemini_model.addItem("gemini-3.1-flash-lite", "gemini-3.1-flash-lite")
 
-        saved_model = self.cfg["gemini"].get("model", "gemini-3.8-flash")
+        saved_model = self.cfg["gemini"].get("model", "gemini-3.8-flash").split()[0]
         self.combo_gemini_model.setCurrentText(saved_model)
         form.addRow("モデル名:", self.combo_gemini_model)
 
@@ -141,7 +140,7 @@ class AISettingsDialog(QDialog):
 
     def _test_gemini(self):
         key = self.txt_gemini_key.text().strip()
-        model = self.combo_gemini_model.currentText().strip()
+        model = self.combo_gemini_model.currentText().strip().split()[0]
         if not key:
             QMessageBox.warning(self, "エラー", "Gemini APIキーを入力してください。")
             return
@@ -162,6 +161,7 @@ class AISettingsDialog(QDialog):
         # Preset Provider Selector
         self.combo_preset = QComboBox()
         self.combo_preset.addItem("手動設定 / カスタム", "")
+        self.combo_preset.addItem("LM Studio ローカル (http://localhost:1234/v1)", "http://localhost:1234/v1")
         self.combo_preset.addItem("OpenAI (https://api.openai.com/v1)", "https://api.openai.com/v1")
         self.combo_preset.addItem("DeepSeek (https://api.deepseek.com/v1)", "https://api.deepseek.com/v1")
         self.combo_preset.addItem("Groq (https://api.groq.com/openai/v1)", "https://api.groq.com/openai/v1")
@@ -171,14 +171,14 @@ class AISettingsDialog(QDialog):
 
         # Base URL
         self.txt_openai_url = QLineEdit(self.cfg["openai_compatible"].get("base_url", "https://api.openai.com/v1"))
-        self.txt_openai_url.setPlaceholderText("https://api.openai.com/v1")
+        self.txt_openai_url.setPlaceholderText("https://api.openai.com/v1 または http://localhost:1234/v1")
         form.addRow("ベースURL:", self.txt_openai_url)
 
         # API Key
         row_key = QHBoxLayout()
         self.txt_openai_key = QLineEdit(self.cfg["openai_compatible"].get("api_key", ""))
         self.txt_openai_key.setEchoMode(QLineEdit.EchoMode.Password)
-        self.txt_openai_key.setPlaceholderText("sk-... または各サービスのAPIキー")
+        self.txt_openai_key.setPlaceholderText("sk-... (LM Studio等のローカル接続時は空欄でOK)")
         row_key.addWidget(self.txt_openai_key)
 
         btn_show = QPushButton("表示")
@@ -195,7 +195,10 @@ class AISettingsDialog(QDialog):
         self.combo_openai_model.setEditable(True)
         self.combo_openai_model.addItem("gpt-4o-mini")
         self.combo_openai_model.addItem("gpt-4o")
-        self.combo_openai_model.addItem("deepseek-chat")
+        self.combo_openai_model.addItem("qwen3-vl-8b-nsfw-caption-v4.5")
+        self.combo_openai_model.addItem("prism-ml/bonsai-27b")
+        self.combo_openai_model.addItem("gemma-4-e4b-uncensored-hauhaucs-aggressive")
+        self.combo_openai_model.addItem("qwen3.5-9b-uncensored-hauhaucs-aggressive")
         self.combo_openai_model.addItem("llama-3.2-11b-vision-preview")
         saved_m = self.cfg["openai_compatible"].get("model", "gpt-4o-mini")
         self.combo_openai_model.setCurrentText(saved_m)
@@ -204,7 +207,7 @@ class AISettingsDialog(QDialog):
         layout.addLayout(form)
 
         # Test Button
-        btn_test = QPushButton("クラウドAPI 接続テスト")
+        btn_test = QPushButton("OpenAI互換API 接続テスト")
         btn_test.clicked.connect(self._test_openai)
         layout.addWidget(btn_test)
 
@@ -218,7 +221,10 @@ class AISettingsDialog(QDialog):
         url = self.combo_preset.currentData()
         if url:
             self.txt_openai_url.setText(url)
-            if "deepseek" in url:
+            if "localhost:1234" in url:
+                self.txt_openai_key.setText("lm-studio")
+                self.combo_openai_model.setCurrentText("qwen3-vl-8b-nsfw-caption-v4.5")
+            elif "deepseek" in url:
                 self.combo_openai_model.setCurrentText("deepseek-chat")
             elif "groq" in url:
                 self.combo_openai_model.setCurrentText("llama-3.2-11b-vision-preview")
@@ -229,16 +235,17 @@ class AISettingsDialog(QDialog):
         url = self.txt_openai_url.text().strip()
         key = self.txt_openai_key.text().strip()
         model = self.combo_openai_model.currentText().strip()
-        if not key:
+        is_local = any(h in url.lower() for h in ("localhost", "127.0.0.1", "0.0.0.0", "192.168.", "10."))
+        if not key and not is_local:
             QMessageBox.warning(self, "エラー", "APIキーを入力してください。")
             return
         try:
-            msg = test_openai_connection(key, url, model)
+            msg = test_openai_connection(key or "lm-studio", url, model)
             QMessageBox.information(self, "接続テスト結果", msg)
         except Exception as e:
             QMessageBox.critical(self, "接続テスト失敗", f"接続エラー:\n{e}")
 
-    # --- Tab 3: Local Ollama ---
+    # --- Tab 3: Local LLM (LM Studio OpenAI-Compatible) ---
     def _create_ollama_tab(self) -> QWidget:
         widget = QWidget()
         layout = QVBoxLayout(widget)
@@ -246,30 +253,33 @@ class AISettingsDialog(QDialog):
 
         form = QFormLayout()
 
-        # Server URL
-        self.txt_ollama_url = QLineEdit(self.cfg["local_ollama"].get("base_url", "http://localhost:11434"))
-        self.txt_ollama_url.setPlaceholderText("http://localhost:11434")
-        form.addRow("サーバーURL:", self.txt_ollama_url)
+        # Server URL (OpenAI-compatible endpoint)
+        self.txt_ollama_url = QLineEdit(self.cfg["local_ollama"].get("base_url", "http://localhost:1234/v1"))
+        self.txt_ollama_url.setPlaceholderText("http://localhost:1234/v1")
+        form.addRow("エンドポイントURL:", self.txt_ollama_url)
 
         # Model Selector
         self.combo_ollama_model = QComboBox()
         self.combo_ollama_model.setEditable(True)
-        self.combo_ollama_model.addItem("qwen2.5-vl:7b")
-        self.combo_ollama_model.addItem("qwen2.5-vl:3b")
-        self.combo_ollama_model.addItem("minicpm-v")
-        self.combo_ollama_model.addItem("llava")
-        saved_m = self.cfg["local_ollama"].get("model", "qwen2.5-vl:7b")
+        self.combo_ollama_model.addItem("qwen3-vl-8b-nsfw-caption-v4.5")
+        self.combo_ollama_model.addItem("prism-ml/bonsai-27b")
+        self.combo_ollama_model.addItem("gemma-4-e4b-uncensored-hauhaucs-aggressive")
+        self.combo_ollama_model.addItem("qwen3.5-9b-uncensored-hauhaucs-aggressive")
+        saved_m = self.cfg["local_ollama"].get("model", "qwen3-vl-8b-nsfw-caption-v4.5")
         self.combo_ollama_model.setCurrentText(saved_m)
-        form.addRow("モデル名:", self.combo_ollama_model)
+        form.addRow("モデルID:", self.combo_ollama_model)
 
         layout.addLayout(form)
 
         # Test and Fetch models Button
-        btn_test = QPushButton("🔍 ローカル接続テスト & モデル一覧自動取得")
+        btn_test = QPushButton("🔍 LM Studio 接続テスト & モデル一覧自動取得 (/v1/models)")
         btn_test.clicked.connect(self._test_ollama)
         layout.addWidget(btn_test)
 
-        lbl_hint = QLabel("💡 RTX 5060 Ti (16GB) をお持ちのため、'qwen2.5-vl:7b' が高速・完全オフラインで動作します。")
+        lbl_hint = QLabel(
+            "💡 LM Studio の OpenAI互換サーバー (デフォルト: http://localhost:1234/v1) に接続します。\n"
+            "APIキー不要・完全オフラインで、画像認識対応モデル (VLM) を自動検出します。"
+        )
         lbl_hint.setStyleSheet("color: #888; font-size: 11px;")
         layout.addWidget(lbl_hint)
         layout.addStretch()
@@ -280,17 +290,20 @@ class AISettingsDialog(QDialog):
         try:
             msg, models = test_ollama_connection(url)
             if models:
+                cur = self.combo_ollama_model.currentText().strip()
                 self.combo_ollama_model.clear()
                 for m in models:
                     self.combo_ollama_model.addItem(m)
+                if cur in models:
+                    self.combo_ollama_model.setCurrentText(cur)
                 QMessageBox.information(
                     self, "接続テスト成功",
-                    f"{msg}\nインストール済みモデルをリストに反映しました:\n" + ", ".join(models)
+                    f"{msg}\nLM Studio のモデル一覧をリストに反映しました (先頭が画像対応VLM):\n• " + "\n• ".join(models)
                 )
             else:
-                QMessageBox.information(self, "接続テスト成功", f"{msg}\n(モデルがまだダウンロードされていません。例: 'ollama run qwen2.5-vl:7b')")
+                QMessageBox.information(self, "接続テスト成功", f"{msg}\n(利用可能なモデルが見つかりませんでした)")
         except Exception as e:
-            QMessageBox.critical(self, "Ollama接続失敗", f"{e}")
+            QMessageBox.critical(self, "LM Studio 接続失敗", f"{e}")
 
     # --- Save & Apply ---
     def _save_and_close(self):
@@ -299,16 +312,18 @@ class AISettingsDialog(QDialog):
 
         # Gemini
         self.cfg["gemini"]["api_key"] = self.txt_gemini_key.text().strip()
-        self.cfg["gemini"]["model"] = self.combo_gemini_model.currentText().strip()
+        g_model_txt = self.combo_gemini_model.currentText().strip()
+        self.cfg["gemini"]["model"] = g_model_txt.split()[0] if g_model_txt else "gemini-3.8-flash"
 
         # OpenAI
         self.cfg["openai_compatible"]["api_key"] = self.txt_openai_key.text().strip()
         self.cfg["openai_compatible"]["base_url"] = self.txt_openai_url.text().strip()
         self.cfg["openai_compatible"]["model"] = self.combo_openai_model.currentText().strip()
 
-        # Ollama
+        # Local LM Studio (OpenAI-compatible)
         self.cfg["local_ollama"]["base_url"] = self.txt_ollama_url.text().strip()
         self.cfg["local_ollama"]["model"] = self.combo_ollama_model.currentText().strip()
+        self.cfg["local_ollama"]["api_key"] = "lm-studio"
 
         save_config(self.cfg)
         QMessageBox.information(self, "保存完了", "AI設定を正常に保存しました！")

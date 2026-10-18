@@ -29,19 +29,40 @@ class MainWindow(QMainWindow):
 
     def __init__(self, initial_image: Optional[str] = None):
         super().__init__()
-        self.setWindowTitle("プロジェクトスピーチバブルメーカー - Speech Bubble Maker")
-        self.resize(1280, 820)
+        self.setWindowTitle("スピーチバブルメーカー (Comic Bubble Maker) v0.5-beta")
 
         # 1. Canvas View & Inspector
         self.canvas = ComicCanvasView(self)
         self.inspector = BubbleInspectorPanel(self)
 
-        splitter = QSplitter(Qt.Orientation.Horizontal, self)
-        splitter.addWidget(self.canvas)
-        splitter.addWidget(self.inspector)
-        splitter.setStretchFactor(0, 1)
-        splitter.setStretchFactor(1, 0)
-        self.setCentralWidget(splitter)
+        self.splitter = QSplitter(Qt.Orientation.Horizontal, self)
+        self.splitter.addWidget(self.canvas)
+        self.splitter.addWidget(self.inspector)
+        self.splitter.setStretchFactor(0, 4)
+        self.splitter.setStretchFactor(1, 1)
+        self.splitter.setCollapsible(0, False)
+        self.splitter.setCollapsible(1, False)
+        self.setCentralWidget(self.splitter)
+
+        # Adapt initial window size safely to screen working area
+        screen = QGuiApplication.primaryScreen()
+        if screen:
+            avail = screen.availableGeometry()
+            target_w = min(1200, int(avail.width() * 0.90))
+            target_h = min(780, int(avail.height() * 0.88))
+            self.resize(target_w, target_h)
+            self.move(
+                avail.x() + (avail.width() - target_w) // 2,
+                avail.y() + (avail.height() - target_h) // 2
+            )
+        else:
+            target_w, target_h = 1100, 720
+            self.resize(target_w, target_h)
+
+        self.setMinimumSize(720, 480)
+        # Give inspector comfortable 340-400px width
+        insp_w = max(330, min(420, int(target_w * 0.28)))
+        self.splitter.setSizes([target_w - insp_w, insp_w])
 
         # 2. Status Bar
         self.status_bar = QStatusBar(self)
@@ -80,14 +101,15 @@ class MainWindow(QMainWindow):
             QToolBar {
                 background-color: #333333;
                 border-bottom: 1px solid #444444;
-                spacing: 6px;
-                padding: 4px;
+                spacing: 4px;
+                padding: 2px 4px;
             }
             QToolButton {
                 background-color: transparent;
                 color: #e0e0e0;
                 border-radius: 4px;
-                padding: 4px 8px;
+                padding: 3px 6px;
+                font-size: 12px;
                 font-weight: 500;
             }
             QToolButton:hover {
@@ -112,14 +134,14 @@ class MainWindow(QMainWindow):
             QLabel {
                 color: #e0e0e0;
             }
-            QPlainTextEdit, QComboBox, QDoubleSpinBox {
+            QPlainTextEdit, QComboBox, QDoubleSpinBox, QSpinBox {
                 background-color: #202020;
                 color: #ffffff;
                 border: 1px solid #444444;
                 border-radius: 4px;
                 padding: 4px;
             }
-            QPlainTextEdit:focus, QComboBox:focus, QDoubleSpinBox:focus {
+            QPlainTextEdit:focus, QComboBox:focus, QDoubleSpinBox:focus, QSpinBox:focus {
                 border: 1px solid #0078d7;
             }
             QPushButton {
@@ -141,20 +163,43 @@ class MainWindow(QMainWindow):
                 color: #aaaaaa;
                 border-top: 1px solid #383838;
             }
+            QScrollBar:vertical {
+                background: #242424;
+                width: 12px;
+                margin: 0px;
+                border-left: 1px solid #383838;
+            }
+            QScrollBar::handle:vertical {
+                background: #555555;
+                min-height: 28px;
+                border-radius: 5px;
+                margin: 2px;
+            }
+            QScrollBar::handle:vertical:hover {
+                background: #777777;
+            }
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+                height: 0px;
+            }
+            QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {
+                background: none;
+            }
         """)
 
     def _create_actions(self):
         # File Actions
-        self.act_open = QAction("📂 画像を開く...", self)
+        self.act_open = QAction("📂 開く", self)
         self.act_open.setShortcut(QKeySequence.StandardKey.Open)
+        self.act_open.setToolTip("画像を開く (Ctrl+O)")
         self.act_open.triggered.connect(self._open_image_dialog)
 
         self.act_paste = QAction("📋 クリップボードから貼り付け", self)
         self.act_paste.setShortcut(QKeySequence.StandardKey.Paste)
         self.act_paste.triggered.connect(self._paste_image_from_clipboard)
 
-        self.act_save = QAction("💾 高解像度で保存 / エクスポート...", self)
+        self.act_save = QAction("💾 保存", self)
         self.act_save.setShortcut(QKeySequence.StandardKey.Save)
+        self.act_save.setToolTip("高解像度で保存 / エクスポート (Ctrl+S)")
         self.act_save.triggered.connect(self._save_image_dialog)
 
         self.act_copy_result = QAction("📑 完成画像をクリップボードにコピー", self)
@@ -166,24 +211,32 @@ class MainWindow(QMainWindow):
         self.act_exit.triggered.connect(self.close)
 
         # Bubble Actions
-        self.act_add_speech = QAction("💬 吹き出しを追加", self)
+        self.act_add_speech = QAction("💬 吹き出し", self)
         self.act_add_speech.setShortcut(QKeySequence("Ctrl+N"))
+        self.act_add_speech.setToolTip("通常の会話吹き出しを追加 (Ctrl+N)")
         self.act_add_speech.triggered.connect(self._add_speech_bubble)
 
-        self.act_add_monologue = QAction("💭 浮遊モノローグを追加", self)
+        self.act_add_monologue = QAction("💭 モノローグ", self)
         self.act_add_monologue.setShortcut(QKeySequence("Ctrl+M"))
+        self.act_add_monologue.setToolTip("枠なし浮遊モノローグを追加 (Ctrl+M)")
         self.act_add_monologue.triggered.connect(self._add_monologue_bubble)
 
-        self.act_add_sfx = QAction("⚡ オノマトペ (SFX) を追加", self)
+        self.act_add_sfx = QAction("⚡ オノマトペ", self)
         self.act_add_sfx.setShortcut(QKeySequence("Ctrl+E"))
+        self.act_add_sfx.setToolTip("漫画の描き文字・擬音を追加 (Ctrl+E)")
         self.act_add_sfx.triggered.connect(self._add_sfx_bubble)
 
-        self.act_ai_dialogue = QAction("✨ AIセリフ自動生成...", self)
+        self.act_sfx_palette = QAction("🎨 擬音パレット", self)
+        self.act_sfx_palette.setShortcut(QKeySequence("Ctrl+Shift+E"))
+        self.act_sfx_palette.setToolTip("漫画のオノマトペ・擬音集（恋愛・日常・迫力・NSFW）からワンクリックで追加 (Ctrl+Shift+E)")
+        self.act_sfx_palette.triggered.connect(self._open_sfx_palette)
+
+        self.act_ai_dialogue = QAction("✨ AIセリフ生成", self)
         self.act_ai_dialogue.setShortcut(QKeySequence("Ctrl+G"))
-        self.act_ai_dialogue.setToolTip("AIがイラストの表情・関係性を読み取り、最適なセリフ・モノローグ・オノマトペを自動配置")
+        self.act_ai_dialogue.setToolTip("AIがイラストの表情・関係性を読み取り、最適なセリフ・モノローグ・オノマトペを自動配置 (Ctrl+G)")
         self.act_ai_dialogue.triggered.connect(self._open_ai_dialogue_generator)
 
-        self.act_ai_settings = QAction("⚙️ AIプロバイダー・APIキー設定...", self)
+        self.act_ai_settings = QAction("⚙️ AI設定", self)
         self.act_ai_settings.setToolTip("Gemini、よそのクラウドAPI、ローカルLLM(Ollama)の切り替え・設定")
         self.act_ai_settings.triggered.connect(self._open_ai_settings)
 
@@ -192,13 +245,22 @@ class MainWindow(QMainWindow):
         self.act_ai_auto.triggered.connect(self._ai_auto_placement)
 
         # View Actions
-        self.act_fit = QAction("🔍 画面に合わせる", self)
+        self.act_fit = QAction("🔍 全体表示", self)
         self.act_fit.setShortcut(QKeySequence("Ctrl+0"))
+        self.act_fit.setToolTip("画面に合わせる (Ctrl+0)")
         self.act_fit.triggered.connect(self.canvas.fit_in_view)
 
-        self.act_zoom_reset = QAction("1:1 等倍表示", self)
+        self.act_zoom_reset = QAction("1:1 等倍", self)
         self.act_zoom_reset.setShortcut(QKeySequence("Ctrl+1"))
+        self.act_zoom_reset.setToolTip("1:1 等倍表示 (Ctrl+1)")
         self.act_zoom_reset.triggered.connect(self.canvas.reset_zoom)
+
+        self.act_toggle_inspector = QAction("📋 プロパティ", self)
+        self.act_toggle_inspector.setCheckable(True)
+        self.act_toggle_inspector.setChecked(True)
+        self.act_toggle_inspector.setShortcut(QKeySequence("Ctrl+P"))
+        self.act_toggle_inspector.setToolTip("プロパティパネルの表示/非表示 (Ctrl+P)")
+        self.act_toggle_inspector.toggled.connect(self._toggle_inspector)
 
     def _create_menus(self):
         menubar = self.menuBar()
@@ -218,6 +280,7 @@ class MainWindow(QMainWindow):
         menu_edit.addAction(self.act_add_speech)
         menu_edit.addAction(self.act_add_monologue)
         menu_edit.addAction(self.act_add_sfx)
+        menu_edit.addAction(self.act_sfx_palette)
         menu_edit.addSeparator()
         menu_edit.addAction(self.act_ai_dialogue)
         menu_edit.addAction(self.act_ai_auto)
@@ -230,6 +293,8 @@ class MainWindow(QMainWindow):
         menu_view = menubar.addMenu("表示 (&V)")
         menu_view.addAction(self.act_fit)
         menu_view.addAction(self.act_zoom_reset)
+        menu_view.addSeparator()
+        menu_view.addAction(self.act_toggle_inspector)
 
         # Help Menu
         menu_help = menubar.addMenu("ヘルプ (&H)")
@@ -240,6 +305,7 @@ class MainWindow(QMainWindow):
     def _create_toolbar(self):
         tb = QToolBar("メインツールバー", self)
         tb.setMovable(False)
+        tb.setFloatable(False)
         self.addToolBar(tb)
 
         tb.addAction(self.act_open)
@@ -248,12 +314,19 @@ class MainWindow(QMainWindow):
         tb.addAction(self.act_add_speech)
         tb.addAction(self.act_add_monologue)
         tb.addAction(self.act_add_sfx)
+        tb.addAction(self.act_sfx_palette)
         tb.addSeparator()
         tb.addAction(self.act_ai_dialogue)
         tb.addAction(self.act_ai_settings)
         tb.addSeparator()
         tb.addAction(self.act_fit)
         tb.addAction(self.act_zoom_reset)
+        tb.addSeparator()
+        tb.addAction(self.act_toggle_inspector)
+
+    def _toggle_inspector(self, checked: bool):
+        """Show or hide the inspector sidebar panel."""
+        self.inspector.setVisible(checked)
 
     # --- Slots & Handlers ---
 
@@ -403,6 +476,16 @@ class MainWindow(QMainWindow):
         )
         self.canvas.add_bubble(cfg)
 
+    def _open_sfx_palette(self):
+        """Open categorized Manga SFX preset palette."""
+        if not self.canvas.base_pil_image:
+            QMessageBox.information(self, "画像が必要です", "先にイラスト画像を開いてください。")
+            return
+        from .sfx_palette import SFXPaletteDialog
+        dlg = SFXPaletteDialog(self)
+        dlg.sfx_picked.connect(lambda cfg: self.canvas.add_bubble(cfg))
+        dlg.exec()
+
     def _ai_auto_placement(self):
         """Intelligently detects safe background areas avoiding character faces."""
         if not self.canvas.base_pil_image:
@@ -454,7 +537,7 @@ class MainWindow(QMainWindow):
         QMessageBox.about(
             self,
             "Comic Bubble Maker",
-            "<h3>Comic Bubble Maker 2.0</h3>"
+            "<h3>Comic Bubble Maker v0.5-beta</h3>"
             "<p>プロフェッショナルな漫画吹き出し・セリフ作成デスクトップアプリ</p>"
             "<ul>"
             "<li><b>AIフリー完全マニュアル編集</b>: 吹き出しやしっぽをマウスで自由自在に配置</li>"
