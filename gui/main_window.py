@@ -29,7 +29,7 @@ class MainWindow(QMainWindow):
 
     def __init__(self, initial_image: Optional[str] = None):
         super().__init__()
-        self.setWindowTitle("Comic Bubble Maker - 漫画吹き出し＆セリフエディタ")
+        self.setWindowTitle("プロジェクトスピーチバブルメーカー - Speech Bubble Maker")
         self.resize(1280, 820)
 
         # 1. Canvas View & Inspector
