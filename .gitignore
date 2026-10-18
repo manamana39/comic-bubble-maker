@@ -10,4 +10,8 @@ output/*
 !output/.gitkeep
 input/*
 !input/.gitkeep
-
+# Build & Dist
+build/
+dist/
+*.spec
+*.zip

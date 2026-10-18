@@ -77,11 +77,17 @@ flowchart TD
 
 ## 🚀 クイックスタート (Quick Start)
 
-### 1. インストール
+### 1. ポータブル版（Python不要・おすすめ）
+Pythonがインストールされていない環境でもすぐ使えます。
+1. **[Releases (v0.5-beta)](https://github.com/manamana39/comic-bubble-maker/releases/tag/v0.5-beta)** から `ComicBubbleMaker-v0.5-beta-windows.zip` をダウンロード
+2. ZIPを解凍し、中の **`ComicBubbleMaker.exe`** をダブルクリックして起動！
+
+### 2. ソースコードから起動する場合（開発者向け）
 ```bash
 git clone https://github.com/manamana39/comic-bubble-maker.git
 cd comic-bubble-maker
 pip install -r requirements.txt
+python comic_bubble_app.py
 ```
 
 ---
