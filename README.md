@@ -82,6 +82,12 @@ Pythonがインストールされていない環境でもすぐ使えます。
 1. **[Releases (v0.5-beta)](https://github.com/manamana39/comic-bubble-maker/releases/tag/v0.5-beta)** から `ComicBubbleMaker-v0.5-beta-windows.zip` をダウンロード
 2. ZIPを解凍し、中の **`ComicBubbleMaker.exe`** をダブルクリックして起動！
 
+> [!NOTE]
+> **Windowsで青い警告画面（SmartScreen）が出た場合**  
+> インターネットからダウンロードしたZIPを展開した際、Windowsのセキュリティ機能により初回起動時に「WindowsによってPCが保護されました」という青い画面が表示されることがあります。  
+> 画面内の **「詳細情報」をクリック ➜ 「実行」** を選択することで通常通り起動できます。
+
+
 ### 2. ソースコードから起動する場合（開発者向け）
 ```bash
 git clone https://github.com/manamana39/comic-bubble-maker.git
