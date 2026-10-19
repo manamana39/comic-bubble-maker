@@ -28,7 +28,8 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "api_key": "lm-studio",
         "base_url": "http://localhost:1234/v1",
         "model": "qwen3-vl-8b-nsfw-caption-v4.5"
-    }
+    },
+    "ui_language": "ja"
 }
 
 

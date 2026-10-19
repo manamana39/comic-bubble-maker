@@ -54,6 +54,66 @@ class AIBubbleItem(BaseModel):
         0.0,
         description="オノマトペ(sfx)の場合の回転角度 (度数法, 例: -10.0)"
     )
+    font_size_ratio: Optional[float] = Field(
+        None,
+        description="文字の大きさ（画像の高さに対する比率）。通常セリフ 0.018〜0.032（標準0.024）、叫び・強調 0.030〜0.045、小声・囁き 0.016〜0.020、オノマトペ(sfx) 0.035〜0.090。感情の強さに応じて変える。"
+    )
+    bubble_pad_x: Optional[float] = Field(
+        None,
+        description="吹き出しの横の余白倍率（文字幅に対する比率、1.3〜2.4）。小さいほど吹き出しがコンパクトになる。標準は1.7。floating/none/sfxでは不要。"
+    )
+    bubble_pad_y: Optional[float] = Field(
+        None,
+        description="吹き出しの縦の余白倍率（文字高に対する比率、1.15〜1.6）。標準は1.25。floating/none/sfxでは不要。"
+    )
+    text_color: Optional[str] = Field(
+        None,
+        description="文字色 '#RRGGBB'。明るい背景に濃色、暗い背景に淡色。sfxは感情に合わせた鮮やかな色（例: ドキッ=#FF5A78 ピンク、ゴゴゴ=#FFD23C 黄、ヒヤッ=#4FA3FF 青）。"
+    )
+    stroke_color: Optional[str] = Field(
+        None,
+        description="sfxのフチ取り色 '#RRGGBB'。文字色と明度差をつける（通常は白 #FFFFFF か濃紺 #1E1E3C）。"
+    )
+    stroke_width: Optional[float] = Field(
+        None,
+        description="sfxのフチ太さ(px, 0〜8)。迫力を出すなら太く(5〜7)、控えめなら細く(2〜3)。"
+    )
+    border_color: Optional[str] = Field(
+        None,
+        description="吹き出しの枠線色 '#RRGGBB'（省略可）。"
+    )
+    border_width: Optional[float] = Field(
+        None,
+        description="吹き出しの枠線の太さ(px, 1〜8)。叫びは太め(4〜6)、囁きは細め(1〜2)、標準2。"
+    )
+    bg_color: Optional[str] = Field(
+        None,
+        description="吹き出しの背景色 '#RRGGBB'（省略可、標準は #FFFAF5）。"
+    )
+    text_shadow: Optional[bool] = Field(
+        None,
+        description="文字に影をつけるか。sfxや浮遊モノローグで立体感・可読性を出したいときに true。"
+    )
+    shadow_offset: Optional[float] = Field(
+        None,
+        description="影の距離(px, 0〜12)。"
+    )
+    shadow_color: Optional[str] = Field(
+        None,
+        description="影の色 '#RRGGBB'。"
+    )
+    text_scale_x: Optional[float] = Field(
+        None,
+        description="文字の横方向の伸縮 (0.6〜1.8, 標準1.0)。迫力のある太く広い文字は大きく、緊張や小声は細く。"
+    )
+    text_scale_y: Optional[float] = Field(
+        None,
+        description="文字の縦方向の伸縮 (0.6〜1.8, 標準1.0)。"
+    )
+    text_skew: Optional[float] = Field(
+        None,
+        description="文字の傾き(斜体)の角度 (-25〜25度, 標準0)。勢い・動きのあるsfxで使う。"
+    )
 
 
 class AISceneResult(BaseModel):
@@ -85,6 +145,16 @@ SYSTEM_INSTRUCTION = """あなたはプロの漫画原作者兼レタリング�
 2. 【しっぽの横切り禁止】: しっぽ（tail_x, tail_y）を発言者に向ける際、他のキャラクターの顔や髪を絶対に横切ってはならない。
 3. モノローグ（floating）、既存枠（none）、オノマトペ（sfx）はしっぽ不要（has_tail: False）。
 
+【演出設計ルール（文字・吹き出しの大きさ、効果、色、書体）】
+セリフの感情と画像の雰囲気に合わせて、各吹き出しごとに次の項目を最適化してください。すべて任意項目ですが、積極的に使って演出を作ってください。
+1. 文字の大きさ(font_size_ratio): 通常 0.024、叫び・強調は大きく(0.032〜0.045)、囁き・小声は小さく(0.016〜0.020)、オノマトペ(sfx)は 0.035〜0.090。同じ画像内でも重要度で差をつける。
+2. 吹き出しの大きさ(bubble_pad_x/bubble_pad_y): 文字に対して吹き出しが大きすぎないよう、横 1.4〜1.9、縦 1.2〜1.4 を基本にコンパクトに。叫び・雲型(cloud/scream)や楕円は少し大きめ(横1.8〜2.3、縦1.4〜1.6)にして文字が枠にかからないようにする。
+3. 書体(font): 通常は kiwi か zenmaru、心の声や静かなモノローグは mincho、叫び・オノマトペは bold、カジュアルは yomogi。
+4. オノマトペ(sfx): 感情に合う鮮やかな文字色(text_color)と、明度差のあるフチ色(stroke_color)・太いフチ(stroke_width 4〜7)、影(text_shadow=true)、傾き(text_skew)や伸縮(text_scale_x/y)、回転(angle)で勢いを出す。背景が暗ければ明るい色＋暗いフチ、明るければ濃い色＋白フチ。
+5. 枠線(border_width): 叫びは太く、囁きは細く。通常は省略可。
+6. 色は画像の主要色と調和させつつ、背景に埋もれないこと（可読性優先）。
+7. 吹き出し・文字がキャラクターの顔に被らない配置は最優先（上記ルールを守る）。
+
 必ず以下のJSONフォーマットのみで出力してください:
 {
   "scene_description": "シーン説明",
@@ -98,7 +168,27 @@ SYSTEM_INSTRUCTION = """あなたはプロの漫画原作者兼レタリング�
       "tail_x": 0.65,
       "tail_y": 0.3,
       "font": "kiwi",
-      "angle": 0.0
+      "angle": 0.0,
+      "font_size_ratio": 0.024,
+      "bubble_pad_x": 1.7,
+      "bubble_pad_y": 1.25
+    },
+    {
+      "text": "ドキッ",
+      "type": "sfx",
+      "center_x": 0.25,
+      "center_y": 0.15,
+      "has_tail": false,
+      "font": "bold",
+      "angle": -12.0,
+      "font_size_ratio": 0.065,
+      "text_color": "#FF5A78",
+      "stroke_color": "#FFFFFF",
+      "stroke_width": 5,
+      "text_shadow": true,
+      "shadow_offset": 4,
+      "text_skew": 8,
+      "text_scale_x": 1.1
     }
   ]
 }
@@ -160,6 +250,31 @@ def detect_white_bubble_patch(image: Image.Image, cx: float, cy: float, sample_r
         return mean_val > 230 and std_val < 22
     except Exception:
         return False
+
+
+def _hex_to_rgba(value: Any, alpha: int = 255) -> Optional[Tuple[int, int, int, int]]:
+    """Parse '#RRGGBB' (or 'RRGGBB' / [r,g,b]) into an RGBA tuple. Returns None if invalid."""
+    try:
+        if isinstance(value, (list, tuple)) and len(value) >= 3:
+            return (int(value[0]) & 255, int(value[1]) & 255, int(value[2]) & 255, alpha)
+        s = str(value).strip().lstrip("#")
+        if len(s) == 3:
+            s = "".join(ch * 2 for ch in s)
+        if len(s) != 6:
+            return None
+        return (int(s[0:2], 16), int(s[2:4], 16), int(s[4:6], 16), alpha)
+    except Exception:
+        return None
+
+
+def _num(value: Any, lo: float, hi: float) -> Optional[float]:
+    """Convert to float and clamp into [lo, hi]. Returns None if missing/invalid."""
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        return max(lo, min(hi, float(value)))
+    except (TypeError, ValueError):
+        return None
 
 
 def _parse_bubbles_json(
@@ -224,6 +339,51 @@ def _parse_bubbles_json(
             angle=angle,
             visibility_mode="auto"
         )
+
+        # --- AI staging: sizes, colors and effects (all optional, validated and clamped) ---
+        v = _num(b.get("font_size_ratio"), 0.014, 0.10)
+        if v is not None:
+            cfg.font_size_ratio = v
+        if b_type not in ("floating", "none", "sfx"):
+            cfg.padding_ratio_x = _num(b.get("bubble_pad_x"), 1.25, 3.0)
+            cfg.padding_ratio_y = _num(b.get("bubble_pad_y"), 1.1, 2.0)
+        c = _hex_to_rgba(b.get("text_color"))
+        if c:
+            cfg.text_color = c
+        if b_type == "sfx":
+            c = _hex_to_rgba(b.get("stroke_color"))
+            if c:
+                cfg.stroke_color = c
+            v = _num(b.get("stroke_width"), 0, 8)
+            if v is not None:
+                cfg.stroke_width = v
+        if b_type not in ("floating", "none", "sfx"):
+            c = _hex_to_rgba(b.get("border_color"), 220)
+            if c:
+                cfg.border_color = c
+            v = _num(b.get("border_width"), 1, 8)
+            if v is not None:
+                cfg.border_width = v
+            c = _hex_to_rgba(b.get("bg_color"))
+            if c:
+                cfg.bg_color = c[:3]
+        if isinstance(b.get("text_shadow"), bool):
+            cfg.text_shadow = b["text_shadow"]
+        v = _num(b.get("shadow_offset"), 0, 12)
+        if v is not None:
+            cfg.shadow_offset = v
+        c = _hex_to_rgba(b.get("shadow_color"), 170)
+        if c:
+            cfg.shadow_color = c
+        v = _num(b.get("text_scale_x"), 0.6, 1.8)
+        if v is not None:
+            cfg.text_scale_x = v
+        v = _num(b.get("text_scale_y"), 0.6, 1.8)
+        if v is not None:
+            cfg.text_scale_y = v
+        v = _num(b.get("text_skew"), -25, 25)
+        if v is not None:
+            cfg.text_skew = v
         bubble_configs.append(cfg)
 
     return scene_desc, bubble_configs

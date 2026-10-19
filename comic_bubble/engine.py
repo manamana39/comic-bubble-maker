@@ -9,6 +9,7 @@ import os
 from typing import Union, Tuple, Optional, List, Dict, Any
 from PIL import Image, ImageDraw
 
+from .effects import has_text_fx, apply_text_fx, composite_centered
 from .models import BubbleConfig, SceneConfig
 from .typography import parse_styled_text, measure_vertical_styled_text, draw_vertical_measured
 from .fonts import get_font
@@ -86,6 +87,9 @@ def render_scene(scene: SceneConfig) -> Image.Image:
                 stroke_fill=item.stroke_color
             )
 
+            if has_text_fx(item):
+                txt_canvas = apply_text_fx(txt_canvas, item, scale)
+
             # Apply rotation angle if specified
             if abs(item.angle) > 0.01:
                 txt_canvas = txt_canvas.rotate(-item.angle, resample=Image.Resampling.BICUBIC, expand=True)
@@ -146,6 +150,20 @@ def render_scene(scene: SceneConfig) -> Image.Image:
             if num_cols == 1:
                 bw = min(bw, int(t_w * 3.4))
             bh = int(t_h * (pad_y if pad_y is not None else 1.38))
+
+        # Explicit bubble padding overrides the automatic size rules (and their minimum/maximum limits)
+        if b_type not in ("floating", "none"):
+            if pad_x is not None:
+                bw = max(1, int(t_w * pad_x))
+            if pad_y is not None:
+                bh = max(1, int(t_h * pad_y))
+
+        # Explicit bubble padding overrides the automatic size rules (and their minimum/maximum limits)
+        if b_type not in ("floating", "none"):
+            if pad_x is not None:
+                bw = max(1, int(t_w * pad_x))
+            if pad_y is not None:
+                bh = max(1, int(t_h * pad_y))
 
         # Position calculation
         if item.center is not None and item.center != "auto":
@@ -208,10 +226,10 @@ def render_scene(scene: SceneConfig) -> Image.Image:
             poly = generate_scream_polygon(rect, tail_pt, num_spikes=18, depth_ratio=0.30)
             draw_hi.polygon(poly, fill=fill_color, outline=border_color, width=border_width)
         elif b_type == "whisper":
-            poly = generate_capsule_polygon(rect, tail_pt)
+            poly = generate_capsule_polygon(rect, tail_pt, anchor_deg=item.tail_anchor)
             draw_dashed_polygon(draw_hi, poly, fill=fill_color, outline=border_color, width=border_width)
         elif b_type == "oval":
-            poly = generate_oval_bubble_polygon(rect, tail_pt)
+            poly = generate_oval_bubble_polygon(rect, tail_pt, anchor_deg=item.tail_anchor)
             draw_hi.polygon(poly, fill=fill_color, outline=border_color, width=border_width)
         elif b_type == "box":
             draw_hi.rectangle(rect, fill=fill_color, outline=border_color, width=border_width)
@@ -219,23 +237,36 @@ def render_scene(scene: SceneConfig) -> Image.Image:
             # Borderless floating text
             pass
         else:  # capsule / squircle
-            poly = generate_capsule_polygon(rect, tail_pt)
+            poly = generate_capsule_polygon(rect, tail_pt, anchor_deg=item.tail_anchor)
             draw_hi.polygon(poly, fill=fill_color, outline=border_color, width=border_width)
 
         # Render Vertical Typography
-        draw_vertical_measured(
-            draw_hi,
-            char_metrics,
-            col_ws,
-            col_hs,
-            t_w,
-            base_font_size,
-            rect,
-            text_color,
-            text_halo=text_halo,
-            halo_color=halo_color,
-            scale=scale
-        )
+        if has_text_fx(item):
+            m = int(20 * scale)
+            fx_layer = Image.new("RGBA", (bw + 2 * m, bh + 2 * m), (0, 0, 0, 0))
+            draw_vertical_measured(
+                ImageDraw.Draw(fx_layer), char_metrics, col_ws, col_hs, t_w, base_font_size,
+                (m, m, m + bw, m + bh), text_color,
+                text_halo=text_halo, halo_color=halo_color, scale=scale,
+                reading_direction=item.reading_direction
+            )
+            fx_layer = apply_text_fx(fx_layer, item, scale)
+            composite_centered(overlay_hi, fx_layer, (bx1 + bx2) // 2, (by1 + by2) // 2)
+        else:
+            draw_vertical_measured(
+                draw_hi,
+                char_metrics,
+                col_ws,
+                col_hs,
+                t_w,
+                base_font_size,
+                rect,
+                text_color,
+                text_halo=text_halo,
+                halo_color=halo_color,
+                scale=scale,
+                reading_direction=item.reading_direction
+            )
 
     # Downsample overlay with high-quality Lanczos filter
     overlay = overlay_hi.resize((w, h), resample=Image.Resampling.LANCZOS)

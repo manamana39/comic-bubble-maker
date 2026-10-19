@@ -10,6 +10,7 @@ from PIL import Image, ImageDraw
 from PySide6.QtGui import QImage, QPixmap
 
 from comic_bubble.models import BubbleConfig
+from comic_bubble.effects import has_text_fx, apply_text_fx, composite_centered
 from comic_bubble.typography import parse_styled_text, measure_vertical_styled_text, draw_vertical_measured
 from comic_bubble.fonts import get_font
 from comic_bubble.shapes import (
@@ -94,6 +95,9 @@ def render_single_bubble_local(
             stroke_fill=bubble.stroke_color
         )
 
+        if has_text_fx(bubble):
+            txt_canvas = apply_text_fx(txt_canvas, bubble, scale)
+
         if abs(bubble.angle) > 0.01:
             txt_canvas = txt_canvas.rotate(-bubble.angle, resample=Image.Resampling.BICUBIC, expand=True)
 
@@ -111,6 +115,12 @@ def render_single_bubble_local(
     t_w, t_h, col_ws, col_hs, char_metrics = measure_vertical_styled_text(
         dummy_draw, styled_lines, base_font_size, font_name
     )
+
+    # Remember measured text size (unscaled) so the GUI can show the current bubble/text ratio
+    bubble._text_size = (t_w // scale, t_h // scale)
+
+    # Remember measured text size (unscaled) so the GUI can show the current bubble/text ratio
+    bubble._text_size = (t_w // scale, t_h // scale)
 
     pad_x = bubble.padding_ratio_x
     pad_y = bubble.padding_ratio_y
@@ -151,6 +161,20 @@ def render_single_bubble_local(
             bw = min(bw, int(t_w * 3.4))
         bh = int(t_h * (pad_y if pad_y is not None else 1.38))
 
+    # Explicit bubble padding overrides the automatic size rules (and their minimum/maximum limits)
+    if b_type not in ("floating", "none"):
+        if pad_x is not None:
+            bw = max(1, int(t_w * pad_x))
+        if pad_y is not None:
+            bh = max(1, int(t_h * pad_y))
+
+    # Explicit bubble padding overrides the automatic size rules (and their minimum/maximum limits)
+    if b_type not in ("floating", "none"):
+        if pad_x is not None:
+            bw = max(1, int(t_w * pad_x))
+        if pad_y is not None:
+            bh = max(1, int(t_h * pad_y))
+
     body_bx1 = -bw // 2
     body_by1 = -bh // 2
     body_bx2 = body_bx1 + bw
@@ -175,6 +199,8 @@ def render_single_bubble_local(
 
     # Add margin for border and blur
     margin = int(16 * scale)
+    if has_text_fx(bubble):
+        margin += int(max(bw, bh) * 0.4)
     min_x -= margin
     min_y -= margin
     max_x += margin
@@ -209,33 +235,49 @@ def render_single_bubble_local(
         poly = generate_scream_polygon(canvas_rect, canvas_tail, num_spikes=18, depth_ratio=0.30)
         draw_hi.polygon(poly, fill=fill_color, outline=border_color, width=border_width)
     elif b_type == "whisper":
-        poly = generate_capsule_polygon(canvas_rect, canvas_tail)
+        poly = generate_capsule_polygon(canvas_rect, canvas_tail, anchor_deg=bubble.tail_anchor)
         draw_dashed_polygon(draw_hi, poly, fill=fill_color, outline=border_color, width=border_width)
     elif b_type == "oval":
-        poly = generate_oval_bubble_polygon(canvas_rect, canvas_tail)
+        poly = generate_oval_bubble_polygon(canvas_rect, canvas_tail, anchor_deg=bubble.tail_anchor)
         draw_hi.polygon(poly, fill=fill_color, outline=border_color, width=border_width)
     elif b_type == "box":
         draw_hi.rectangle(canvas_rect, fill=fill_color, outline=border_color, width=border_width)
     elif b_type in ("floating", "none"):
         pass
     else:  # capsule
-        poly = generate_capsule_polygon(canvas_rect, canvas_tail)
+        poly = generate_capsule_polygon(canvas_rect, canvas_tail, anchor_deg=bubble.tail_anchor)
         draw_hi.polygon(poly, fill=fill_color, outline=border_color, width=border_width)
 
     # Render Vertical Typography
-    draw_vertical_measured(
-        draw_hi,
-        char_metrics,
-        col_ws,
-        col_hs,
-        t_w,
-        base_font_size,
-        canvas_rect,
-        text_color,
-        text_halo=bubble.text_halo,
-        halo_color=bubble.halo_color,
-        scale=scale
-    )
+    if has_text_fx(bubble):
+        m = int(20 * scale)
+        fx_layer = Image.new("RGBA", (bw + 2 * m, bh + 2 * m), (0, 0, 0, 0))
+        draw_vertical_measured(
+            ImageDraw.Draw(fx_layer), char_metrics, col_ws, col_hs, t_w, base_font_size,
+            (m, m, m + bw, m + bh), text_color,
+            text_halo=bubble.text_halo, halo_color=bubble.halo_color, scale=scale,
+            reading_direction=bubble.reading_direction
+        )
+        fx_layer = apply_text_fx(fx_layer, bubble, scale)
+        composite_centered(
+            hi_img, fx_layer,
+            (canvas_rect[0] + canvas_rect[2]) // 2, (canvas_rect[1] + canvas_rect[3]) // 2
+        )
+    else:
+        draw_vertical_measured(
+            draw_hi,
+            char_metrics,
+            col_ws,
+            col_hs,
+            t_w,
+            base_font_size,
+            canvas_rect,
+            text_color,
+            text_halo=bubble.text_halo,
+            halo_color=bubble.halo_color,
+            scale=scale,
+            reading_direction=bubble.reading_direction
+        )
 
     # Downsample with Lanczos
     target_w = max(1, canvas_w // scale)

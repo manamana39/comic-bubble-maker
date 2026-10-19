@@ -1,4 +1,4 @@
-"""
+﻿"""
 comic_bubble.shapes
 ~~~~~~~~~~~~~~~~~~~
 Bubble polygon generation and speech tail geometry.
@@ -9,11 +9,20 @@ import math
 from typing import List, Tuple, Optional
 from PIL import ImageDraw
 
+# Tail base width as a ratio of the bubble's short side (smaller = slimmer tail)
+TAIL_BASE_RATIO = 0.22
+
+def anchor_to_math_angle(anchor_deg: float) -> float:
+    """Convert a tail anchor angle (0=up, clockwise, degrees) to an atan2 angle (y-down coords)."""
+    a = math.radians(anchor_deg)
+    return math.atan2(-math.cos(a), math.sin(a))
+
 def generate_capsule_polygon(
     rect: Tuple[int, int, int, int],
     tail: Optional[Tuple[int, int]] = None,
     corner_radius_ratio: float = 0.38,
-    num_corner_points: int = 12
+    num_corner_points: int = 12,
+    anchor_deg: Optional[float] = None
 ) -> List[Tuple[float, float]]:
     """
     Generate a super-ellipse capsule (squircle) polygon.
@@ -56,7 +65,7 @@ def generate_capsule_polygon(
     tx, ty = tail
     cx = (x1 + x2) / 2.0
     cy = (y1 + y2) / 2.0
-    tail_angle = math.atan2(ty - cy, tx - cx)
+    tail_angle = anchor_to_math_angle(anchor_deg) if anchor_deg is not None else math.atan2(ty - cy, tx - cx)
 
     angles = []
     for px, py in base_points:
@@ -65,23 +74,41 @@ def generate_capsule_polygon(
         angles.append(diff)
 
     min_idx = min(range(len(angles)), key=lambda i: abs(angles[i]))
-    span = max(3, int(len(base_points) * 0.055))
-    i_left = (min_idx - span) % len(base_points)
-    i_right = (min_idx + span) % len(base_points)
 
-    poly = []
-    inserted = False
-    for i, pt in enumerate(base_points):
-        if i == min_idx:
-            if not inserted:
-                poly.append(base_points[i_left])
-                poly.append((float(tx), float(ty)))
-                poly.append(base_points[i_right])
-                inserted = True
-        elif (i - min_idx) % len(base_points) > span and (min_idx - i) % len(base_points) > span:
-            poly.append(pt)
+    # Slim tail: base width is a fixed arc length along the outline
+    # (independent of tail length), so long tails stay thin.
+    n = len(base_points)
+    seg = []
+    for i in range(n):
+        p, q = base_points[i], base_points[(i + 1) % n]
+        seg.append(math.hypot(q[0] - p[0], q[1] - p[1]))
+    perimeter = sum(seg)
+    cum = [0.0]
+    for s in seg:
+        cum.append(cum[-1] + s)
 
-    return poly if inserted else base_points
+    def point_at(s: float) -> Tuple[float, float]:
+        s %= perimeter
+        for i in range(n):
+            if s <= cum[i + 1]:
+                t = (s - cum[i]) / seg[i] if seg[i] > 0 else 0.0
+                p, q = base_points[i], base_points[(i + 1) % n]
+                return (p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t)
+        return base_points[0]
+
+    half_base = max(4.0, min(bw, bh) * TAIL_BASE_RATIO / 2.0)
+    s_end = cum[min_idx] + half_base
+    open_len = perimeter - 2.0 * half_base
+
+    poly = [point_at(cum[min_idx] - half_base), (float(tx), float(ty)), point_at(s_end)]
+    rest = []
+    for k in range(n):
+        d = (cum[k] - s_end) % perimeter
+        if 0.0 < d < open_len:
+            rest.append((d, base_points[k]))
+    rest.sort(key=lambda e: e[0])
+    poly.extend(p for _, p in rest)
+    return poly
 
 def generate_cloud_polygon(
     rect: Tuple[int, int, int, int],
@@ -114,7 +141,8 @@ def generate_cloud_polygon(
 def generate_oval_bubble_polygon(
     rect: Tuple[int, int, int, int],
     tail: Optional[Tuple[int, int]] = None,
-    num_points: int = 72
+    num_points: int = 72,
+    anchor_deg: Optional[float] = None
 ) -> List[Tuple[float, float]]:
     """Generate a classic manga egg/oval bubble polygon."""
     x1, y1, x2, y2 = rect
@@ -131,9 +159,9 @@ def generate_oval_bubble_polygon(
         ]
 
     tx, ty = tail
-    tail_angle = math.atan2(ty - cy, tx - cx)
+    tail_angle = anchor_to_math_angle(anchor_deg) if anchor_deg is not None else math.atan2(ty - cy, tx - cx)
     poly = []
-    base_span = 0.32
+    base_span = 0.18
     inserted_tail = False
 
     for i in range(num_points):

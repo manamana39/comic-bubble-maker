@@ -369,6 +369,11 @@ class ComicCanvasView(QGraphicsView):
             for url in event.mimeData().urls():
                 fpath = url.toLocalFile()
                 if fpath.lower().endswith((".png", ".jpg", ".jpeg", ".webp", ".bmp")):
+                    win = self.window()
+                    if hasattr(win, "confirm_save_if_modified"):
+                        if not win.confirm_save_if_modified():
+                            event.ignore()
+                            return
                     self.load_image(fpath)
                     event.acceptProposedAction()
                     return

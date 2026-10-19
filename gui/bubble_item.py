@@ -86,6 +86,66 @@ class TailHandleItem(QGraphicsObject):
         super().mouseReleaseEvent(event)
 
 
+class AnchorHandleItem(QGraphicsObject):
+    """Draggable handle on the bubble outline that sets where the tail leaves the bubble."""
+
+    def __init__(self, parent: "BubbleGraphicsItem"):
+        super().__init__(parent)
+        self.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.setZValue(190)
+        self.radius = 6.0
+        self.is_hovered = False
+        self.is_dragging = False
+        self.setAcceptHoverEvents(True)
+
+    def boundingRect(self) -> QRectF:
+        r = self.radius + 5
+        return QRectF(-r, -r, r * 2, r * 2)
+
+    def paint(self, painter: QPainter, option: QStyleOptionGraphicsItem, widget: Optional[QWidget] = None):
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        fill = QColor(60, 220, 255, 255) if (self.is_hovered or self.is_dragging) else QColor(0, 180, 230, 230)
+        painter.setBrush(QBrush(fill))
+        painter.setPen(QPen(QColor(255, 255, 255), 2.0))
+        painter.drawRect(QRectF(-self.radius, -self.radius, self.radius * 2, self.radius * 2))
+
+    def hoverEnterEvent(self, event):
+        self.is_hovered = True
+        self.update()
+        super().hoverEnterEvent(event)
+
+    def hoverLeaveEvent(self, event):
+        self.is_hovered = False
+        self.update()
+        super().hoverLeaveEvent(event)
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.is_dragging = True
+            event.accept()
+            return
+        super().mousePressEvent(event)
+
+    def _angle_from_event(self, event) -> float:
+        cur = self.parentItem().mapFromItem(self, event.pos())
+        return round(math.degrees(math.atan2(cur.x(), -cur.y())), 1)
+
+    def mouseMoveEvent(self, event):
+        if self.is_dragging:
+            self.parentItem().on_tail_anchor_changed(self._angle_from_event(event), is_final=False)
+            event.accept()
+            return
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton and self.is_dragging:
+            self.is_dragging = False
+            self.parentItem().on_tail_anchor_changed(self._angle_from_event(event), is_final=True)
+            event.accept()
+            return
+        super().mouseReleaseEvent(event)
+
+
 class ResizeHandleItem(QGraphicsObject):
     """Draggable handle at corners of the bubble for resizing font size / bubble dimensions."""
 
@@ -263,6 +323,11 @@ class BubbleGraphicsItem(QGraphicsObject):
         # Tail handle (orange circle)
         self.tail_handle = TailHandleItem(self)
 
+        # Tail anchor handle (cyan square on the outline)
+        self.anchor_handle = AnchorHandleItem(self)
+        self.anchor_handle.setVisible(False)
+        self._handles_visible = False
+
         # Rotation handle (green circle)
         self.rotate_handle = RotateHandleItem(self)
 
@@ -303,6 +368,35 @@ class BubbleGraphicsItem(QGraphicsObject):
         # Rotate handle is visible for SFX and floating text when selected
         is_rotatable = self.config.type in ("sfx", "floating")
         self.rotate_handle.setVisible(visible and is_rotatable)
+        self._handles_visible = visible
+        self._update_anchor_handle()
+
+    def _supports_anchor(self) -> bool:
+        return self.config.type not in ("floating", "none", "sfx", "cloud", "scream", "box")
+
+    def _anchor_angle_deg(self) -> float:
+        """Current anchor angle (0=top, clockwise). Auto = direction toward the tail tip."""
+        if self.config.tail_anchor is not None:
+            return self.config.tail_anchor
+        tp = self.tail_handle.pos()
+        return math.degrees(math.atan2(tp.x(), -tp.y()))
+
+    def _update_anchor_handle(self):
+        show = self._handles_visible and self.tail_handle.isVisible() and self._supports_anchor()
+        self.anchor_handle.setVisible(show)
+        if not show:
+            return
+        bw, bh = self.body_size
+        a = math.radians(self._anchor_angle_deg())
+        dx, dy = math.sin(a), -math.cos(a)
+        hw, hh = bw / 2.0, bh / 2.0
+        if self.config.type == "oval":
+            t = 1.0 / math.sqrt((dx / hw) ** 2 + (dy / hh) ** 2)
+        else:
+            t = min(hw / abs(dx) if abs(dx) > 1e-9 else 1e9, hh / abs(dy) if abs(dy) > 1e-9 else 1e9)
+            # Rounded corners sit slightly inside the bounding rectangle
+            t *= 0.93 if abs(abs(dx) * hh - abs(dy) * hw) < 0.35 * hw * hh / max(hw, hh) else 1.0
+        self.anchor_handle.setPos(dx * t, dy * t)
 
     def _reposition_resize_handles(self):
         bw, bh = self.body_size
@@ -319,6 +413,7 @@ class BubbleGraphicsItem(QGraphicsObject):
         rx = dist * math.sin(rad)
         ry = -dist * math.cos(rad)
         self.rotate_handle.setPos(rx, ry)
+        self._update_anchor_handle()
 
 
     def update_rendering(self, scale: int = 2):
@@ -359,6 +454,18 @@ class BubbleGraphicsItem(QGraphicsObject):
         self.update_rendering(scale=2)
         self.changed.emit()
 
+    def on_tail_anchor_changed(self, angle_deg: float, is_final: bool = False):
+        """Called when user drags the anchor handle (where the tail leaves the bubble)."""
+        self.config.tail_anchor = angle_deg
+        self.update_rendering(scale=2 if is_final else 1)
+        self.changed.emit()
+
+    def reset_tail_anchor(self):
+        """Return to automatic tail origin (nearest the tail tip)."""
+        self.config.tail_anchor = None
+        self.update_rendering()
+        self.changed.emit()
+
     def on_resize_font_size(self, new_ratio: float, is_final: bool = False):
         """Called when user drags any corner resize handle."""
         self.config.font_size_ratio = new_ratio
@@ -374,6 +481,7 @@ class BubbleGraphicsItem(QGraphicsObject):
     def set_has_tail(self, enable: bool):
         """Enable or disable speech tail."""
         self.tail_handle.setVisible(enable)
+        self._update_anchor_handle()
         if enable:
             if not self.config.tail:
                 self.tail_handle.setPos(-40, 80)
@@ -402,6 +510,8 @@ class BubbleGraphicsItem(QGraphicsObject):
         if self.tail_handle.isVisible():
             handle_rect = self.tail_handle.mapRectToParent(self.tail_handle.boundingRect())
             rect = rect.united(handle_rect)
+        if self.anchor_handle.isVisible():
+            rect = rect.united(self.anchor_handle.mapRectToParent(self.anchor_handle.boundingRect()))
         if self.rotate_handle.isVisible():
             r_rect = self.rotate_handle.mapRectToParent(self.rotate_handle.boundingRect())
             rect = rect.united(r_rect)

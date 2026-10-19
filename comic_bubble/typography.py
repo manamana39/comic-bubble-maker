@@ -140,23 +140,29 @@ def draw_vertical_measured(
     text_color: Tuple[int, int, int, int] = (35, 35, 45, 255),
     text_halo: bool = True,
     halo_color: Optional[Tuple[int, int, int, int]] = None,
-    scale: int = 3
+    scale: int = 3,
+    reading_direction: str = "rtl"
 ):
     """
     Render vertical Japanese text with precision micro-offsets, glyph alignment,
     halo glow, and mathematical arc bracket rendering.
+    Supports right-to-left ('rtl', classic Japanese) and left-to-right ('ltr').
     """
     x1, y1, x2, y2 = box
     box_w = x2 - x1
     box_h = y2 - y1
 
     col_spacing = int(base_font_size * 0.35)
-    start_x = x1 + (box_w + total_text_width) // 2
+    is_ltr = (reading_direction or "rtl").lower() == "ltr"
 
-    cur_col_right = start_x
+    if is_ltr:
+        cur_col_left = x1 + (box_w - total_text_width) // 2
+    else:
+        cur_col_right = x1 + (box_w + total_text_width) // 2
+
     for col_idx, line_metrics in enumerate(col_char_metrics):
         col_w = col_widths[col_idx]
-        col_x = cur_col_right - col_w
+        col_x = cur_col_left if is_ltr else cur_col_right - col_w
         cur_y = y1 + (box_h - col_heights[col_idx]) // 2
         char_sp = int(base_font_size * 0.05)
 
@@ -246,7 +252,10 @@ def draw_vertical_measured(
             draw.text((draw_x, draw_y), disp_ch, font=f, fill=text_color)
             cur_y += adv + char_sp
 
-        cur_col_right = col_x - col_spacing
+        if is_ltr:
+            cur_col_left = col_x + col_w + col_spacing
+        else:
+            cur_col_right = col_x - col_spacing
 
 
 KINSOKU_HEADS = set("、。，．！？!?）)]｝}」』’\"ー―〜~…‥っッゃゅょぁぃぅぇぉャュョァィゥェォ")

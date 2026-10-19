@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "comic-bubble-maker"
-version = "0.5.0-beta"
+version = "0.6.0-beta"
 description = "Intelligent Japanese Manga Speech Bubble & Floating Monologue Engine"
 readme = "README.md"
 requires-python = ">=3.8"
