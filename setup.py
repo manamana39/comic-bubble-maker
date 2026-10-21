@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="comic-bubble-maker",
-    version="0.6.0-beta",
+    version="0.65beta",
     description="Intelligent Japanese Manga Speech Bubble & Floating Monologue Engine",
     author="Antigravity Team",
     packages=find_packages(),

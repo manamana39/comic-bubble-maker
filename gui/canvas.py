@@ -12,11 +12,13 @@ from PIL import Image
 from PySide6.QtCore import Qt, QPointF, Signal, QRectF
 from PySide6.QtGui import (
     QPainter, QPixmap, QImage, QWheelEvent, QMouseEvent,
-    QKeyEvent, QDragEnterEvent, QDropEvent, QContextMenuEvent
+    QKeyEvent, QDragEnterEvent, QDropEvent, QContextMenuEvent,
+    QPen, QBrush, QColor
 )
-from PySide6.QtWidgets import QGraphicsView, QGraphicsScene, QGraphicsPixmapItem, QMenu
+from PySide6.QtWidgets import QGraphicsView, QGraphicsScene, QGraphicsPixmapItem, QGraphicsRectItem, QMenu
 
 from comic_bubble.models import BubbleConfig
+from comic_bubble.cleaner import clean_bubble_text_in_region, sample_bubble_paper_color
 from .bubble_item import BubbleGraphicsItem
 from .bubble_renderer import pil_to_qpixmap
 
@@ -30,6 +32,8 @@ class ComicCanvasView(QGraphicsView):
     bubble_selected = Signal(object)      # BubbleGraphicsItem or None
     scene_modified = Signal()
     image_loaded = Signal(str, int, int)  # path, width, height
+    clean_mode_changed = Signal(bool)
+    text_cleaned = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -50,10 +54,17 @@ class ComicCanvasView(QGraphicsView):
         self.bg_item: Optional[QGraphicsPixmapItem] = None
         self.bubble_items: List[BubbleGraphicsItem] = []
         self.current_selected_bubble: Optional[BubbleGraphicsItem] = None
+        self._image_undo_stack: List[Image.Image] = []
 
         self._is_panning = False
         self._pan_start = QPointF()
         self._space_pressed = False
+
+        # Text Cleaner (セリフ白抜き) rubber-band state
+        self.clean_text_mode = False
+        self._is_cleaning_drag = False
+        self._clean_start_scene = QPointF()
+        self._clean_rect_item: Optional[QGraphicsRectItem] = None
 
         self.setAcceptDrops(True)
         self.scene.selectionChanged.connect(self._on_scene_selection_changed)
@@ -71,6 +82,10 @@ class ComicCanvasView(QGraphicsView):
         self.scene.clear()
         self.bubble_items.clear()
         self.current_selected_bubble = None
+        self._image_undo_stack.clear()
+        self._clean_rect_item = None
+        self._image_undo_stack.clear()
+        self._clean_rect_item = None
 
         # Add background image item
         qpix = pil_to_qpixmap(self.base_pil_image)
@@ -91,6 +106,8 @@ class ComicCanvasView(QGraphicsView):
         self.scene.clear()
         self.bubble_items.clear()
         self.current_selected_bubble = None
+        self._image_undo_stack.clear()
+        self._clean_rect_item = None
 
         qpix = pil_to_qpixmap(self.base_pil_image)
         self.bg_item = self.scene.addPixmap(qpix)
@@ -183,6 +200,112 @@ class ComicCanvasView(QGraphicsView):
     def _on_bubble_changed(self):
         self.scene_modified.emit()
 
+    # --- Batch Tail Flip & Spread Alignment ---
+
+    def flip_all_tails_horizontal(self) -> int:
+        """Flip the horizontal tail direction for all bubbles on canvas that have a tail."""
+        count = 0
+        for item in self.bubble_items:
+            if item.flip_tail_horizontal():
+                count += 1
+        if count > 0:
+            self.scene_modified.emit()
+        return count
+
+    def align_tails_for_spread(self, mode: str = "inward") -> int:
+        """
+        Align all bubble tails for a 2-page spread.
+        mode='inward'  -> left page bubbles point right (↘), right page bubbles point left (↙).
+        mode='outward' -> left page bubbles point left (↙), right page bubbles point right (↘).
+        """
+        if not self.base_pil_image:
+            return 0
+        mid_x = self.base_pil_image.size[0] / 2.0
+        count = 0
+        for item in self.bubble_items:
+            is_left_side = item.x() < mid_x
+            point_right = is_left_side if mode == "inward" else (not is_left_side)
+            if item.set_tail_horizontal_dir(point_right):
+                count += 1
+        if count > 0:
+            self.scene_modified.emit()
+        return count
+
+    # --- Existing Text Cleaner (セリフ白抜き) & Paper Color Sampler ---
+
+    def set_clean_text_mode(self, enabled: bool):
+        """Toggle rubber-band text cleaner mode for blanking out existing dialogue in bubbles."""
+        if self.clean_text_mode == enabled:
+            return
+        self.clean_text_mode = enabled
+        self._is_cleaning_drag = False
+        if self._clean_rect_item and self._clean_rect_item.scene():
+            self.scene.removeItem(self._clean_rect_item)
+        self._clean_rect_item = None
+        self.setCursor(Qt.CursorShape.CrossCursor if enabled else Qt.CursorShape.ArrowCursor)
+        self.clean_mode_changed.emit(enabled)
+
+    def can_undo_clean(self) -> bool:
+        return len(self._image_undo_stack) > 0
+
+    def undo_last_clean(self) -> bool:
+        """Restore base image before the last text white-out operation."""
+        if not self._image_undo_stack or not self.bg_item:
+            return False
+        self.base_pil_image = self._image_undo_stack.pop()
+        self.bg_item.setPixmap(pil_to_qpixmap(self.base_pil_image))
+        self.scene_modified.emit()
+        return True
+
+    def sample_paper_color_for_bubble(self, item: BubbleGraphicsItem):
+        """Sample the bright paper background color of the base image under `item`."""
+        if not self.base_pil_image or not item:
+            return (255, 255, 255)
+        bw, bh = item.body_size
+        cx, cy = item.x(), item.y()
+        box = (int(cx - bw / 2), int(cy - bh / 2), int(cx + bw / 2), int(cy + bh / 2))
+        paper_rgb = sample_bubble_paper_color(self.base_pil_image, box)
+        item.config.bg_color = paper_rgb
+        item.update_rendering()
+        item.changed.emit()
+        return paper_rgb
+
+    def clean_region_and_place_bubble(self, rect: QRectF, add_new_bubble: bool = True) -> Optional[BubbleGraphicsItem]:
+        """Erase existing text inside `rect` on base_pil_image and optionally place a borderless text item."""
+        if not self.base_pil_image or not self.bg_item:
+            return None
+        img_rect = self.scene.sceneRect()
+        clipped = rect.intersected(img_rect)
+        if clipped.width() < 6 or clipped.height() < 6:
+            return None
+
+        self._image_undo_stack.append(self.base_pil_image.copy())
+        box = (int(clipped.left()), int(clipped.top()), int(clipped.right()), int(clipped.bottom()))
+        cleaned_img, paper_rgb = clean_bubble_text_in_region(self.base_pil_image, box)
+        self.base_pil_image = cleaned_img
+        self.bg_item.setPixmap(pil_to_qpixmap(self.base_pil_image))
+        self.text_cleaned.emit()
+        self.scene_modified.emit()
+
+        if add_new_bubble:
+            w, h = self.base_pil_image.size
+            cx = clipped.center().x() / w
+            cy = clipped.center().y() / h
+            cfg = BubbleConfig(
+                text="新しいセリフ",
+                type="none",
+                font="kiwi",
+                center=(cx, cy),
+                tail=None,
+                font_size_ratio=0.024,
+                bg_color=paper_rgb,
+                text_color=(40, 35, 50, 255),
+                text_halo=False,
+                visibility_mode="solid"
+            )
+            return self.add_bubble(cfg)
+        return None
+
     # --- Mouse & Navigation Events ---
 
     def wheelEvent(self, event: QWheelEvent):
@@ -199,6 +322,18 @@ class ComicCanvasView(QGraphicsView):
             self.setCursor(Qt.CursorShape.ClosedHandCursor)
             event.accept()
             return
+        if self.clean_text_mode and event.button() == Qt.MouseButton.LeftButton and self.base_pil_image:
+            self._is_cleaning_drag = True
+            self._clean_start_scene = self.mapToScene(event.position().toPoint())
+            if self._clean_rect_item and self._clean_rect_item.scene():
+                self.scene.removeItem(self._clean_rect_item)
+            self._clean_rect_item = QGraphicsRectItem(QRectF(self._clean_start_scene, self._clean_start_scene))
+            self._clean_rect_item.setPen(QPen(QColor(0, 210, 255, 240), 2.0, Qt.PenStyle.DashLine))
+            self._clean_rect_item.setBrush(QBrush(QColor(255, 255, 255, 90)))
+            self._clean_rect_item.setZValue(9999)
+            self.scene.addItem(self._clean_rect_item)
+            event.accept()
+            return
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event: QMouseEvent):
@@ -209,12 +344,40 @@ class ComicCanvasView(QGraphicsView):
             self.verticalScrollBar().setValue(int(self.verticalScrollBar().value() - delta.y()))
             event.accept()
             return
+        if self._is_cleaning_drag and self._clean_rect_item:
+            cur_scene = self.mapToScene(event.position().toPoint())
+            rect = QRectF(self._clean_start_scene, cur_scene).normalized()
+            self._clean_rect_item.setRect(rect)
+            event.accept()
+            return
         super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event: QMouseEvent):
         if self._is_panning:
             self._is_panning = False
-            self.setCursor(Qt.CursorShape.ArrowCursor if not self._space_pressed else Qt.CursorShape.OpenHandCursor)
+            if self.clean_text_mode:
+                self.setCursor(Qt.CursorShape.CrossCursor)
+            else:
+                self.setCursor(Qt.CursorShape.ArrowCursor if not self._space_pressed else Qt.CursorShape.OpenHandCursor)
+            event.accept()
+            return
+        if self._is_cleaning_drag and event.button() == Qt.MouseButton.LeftButton:
+            self._is_cleaning_drag = False
+            cur_scene = self.mapToScene(event.position().toPoint())
+            rect = QRectF(self._clean_start_scene, cur_scene).normalized()
+            if self._clean_rect_item and self._clean_rect_item.scene():
+                self.scene.removeItem(self._clean_rect_item)
+            self._clean_rect_item = None
+
+            # If user just clicked without dragging, clean a default 90x130 region around the click
+            if rect.width() < 10 and rect.height() < 10:
+                cx, cy = self._clean_start_scene.x(), self._clean_start_scene.y()
+                rect = QRectF(cx - 45, cy - 65, 90, 130)
+
+            keep_mode = bool(event.modifiers() & Qt.KeyboardModifier.ShiftModifier)
+            self.clean_region_and_place_bubble(rect, add_new_bubble=True)
+            if not keep_mode:
+                self.set_clean_text_mode(False)
             event.accept()
             return
         super().mouseReleaseEvent(event)
@@ -255,6 +418,11 @@ class ComicCanvasView(QGraphicsView):
             act_del = menu.addAction("🗑️ 削除 (Delete)")
             act_dup = menu.addAction("📋 複製 (Ctrl+D)")
             menu.addSeparator()
+            act_flip_tail = None
+            if target_bubble.tail_handle.isVisible() and target_bubble.config.type not in ("floating", "none", "patch", "sfx"):
+                act_flip_tail = menu.addAction("⇄ このしっぽの向きを左右反転")
+            act_flip_all = menu.addAction("⇄ 全吹き出しのしっぽを一括反転")
+            menu.addSeparator()
             act_front = menu.addAction("🔝 最前面へ移動")
             act_back = menu.addAction("🔙 最背面へ移動")
 
@@ -268,6 +436,10 @@ class ComicCanvasView(QGraphicsView):
                 self.remove_bubble(target_bubble)
             elif action == act_dup:
                 self._duplicate_bubble(target_bubble)
+            elif act_flip_tail and action == act_flip_tail:
+                target_bubble.flip_tail_horizontal()
+            elif action == act_flip_all:
+                self.flip_all_tails_horizontal()
             elif action == act_front:
                 self._bring_to_front(target_bubble)
             elif action == act_back:
@@ -282,11 +454,32 @@ class ComicCanvasView(QGraphicsView):
             # Right-clicked on empty canvas: quick-add options
             if self.base_pil_image:
                 act_add_speech = menu.addAction("💬 ここに吹き出しを追加")
+                act_add_patch = menu.addAction("🩹 ここに文字隠し付きセリフを追加 (既存枠用)")
                 act_add_mono = menu.addAction("💭 ここにモノローグを追加")
                 act_add_sfx = menu.addAction("⚡ ここにオノマトペを追加")
+                menu.addSeparator()
+                act_clean_here = menu.addAction("🧹 ドラッグで元のセリフを白抜き消去...")
+                act_flip_all = menu.addAction("⇄ 全吹き出しのしっぽを一括左右反転")
+                act_spread_in = menu.addAction("↘↙ 見開き中央（内向き）にしっぽを一括整列")
                 action = menu.exec(event.globalPos())
                 if action == act_add_speech:
                     self.add_bubble(center_pos=scene_pos)
+                elif action == act_add_patch:
+                    w, h = self.base_pil_image.size
+                    box = (int(scene_pos.x() - 50), int(scene_pos.y() - 70), int(scene_pos.x() + 50), int(scene_pos.y() + 70))
+                    paper_rgb = sample_bubble_paper_color(self.base_pil_image, box)
+                    cfg = BubbleConfig(
+                        text="差し替えセリフ",
+                        type="patch",
+                        font="kiwi",
+                        center=(scene_pos.x() / w, scene_pos.y() / h),
+                        font_size_ratio=0.024,
+                        bg_color=paper_rgb,
+                        bg_alpha=1.0,
+                        text_halo=False,
+                        visibility_mode="solid"
+                    )
+                    self.add_bubble(config=cfg)
                 elif action == act_add_mono:
                     w, h = self.base_pil_image.size
                     cfg = BubbleConfig(
@@ -308,6 +501,12 @@ class ComicCanvasView(QGraphicsView):
                         angle=-15.0
                     )
                     self.add_bubble(config=cfg)
+                elif action == act_clean_here:
+                    self.set_clean_text_mode(True)
+                elif action == act_flip_all:
+                    self.flip_all_tails_horizontal()
+                elif action == act_spread_in:
+                    self.align_tails_for_spread("inward")
                 event.accept()
                 return
 
@@ -335,7 +534,15 @@ class ComicCanvasView(QGraphicsView):
 
 
     def keyPressEvent(self, event: QKeyEvent):
-        if event.key() == Qt.Key.Key_Space and not event.isAutoRepeat():
+        if event.key() == Qt.Key.Key_Escape and self.clean_text_mode:
+            self.set_clean_text_mode(False)
+            event.accept()
+            return
+        elif event.key() == Qt.Key.Key_Z and (event.modifiers() & Qt.KeyboardModifier.ControlModifier):
+            if self.undo_last_clean():
+                event.accept()
+                return
+        elif event.key() == Qt.Key.Key_Space and not event.isAutoRepeat():
             self._space_pressed = True
             self.setCursor(Qt.CursorShape.OpenHandCursor)
         elif event.key() in (Qt.Key.Key_Delete, Qt.Key.Key_Backspace):

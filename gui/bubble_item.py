@@ -348,7 +348,7 @@ class BubbleGraphicsItem(QGraphicsObject):
             self.setPos(self.canvas_w * 0.5, self.canvas_h * 0.3)
 
         # Initial tail placement
-        if self.config.tail and self.config.type not in ("floating", "none", "sfx"):
+        if self.config.tail and self.config.type not in ("floating", "none", "patch", "sfx"):
             tx = self.config.tail[0] * self.canvas_w if self.config.tail[0] <= 1.0 else self.config.tail[0]
             ty = self.config.tail[1] * self.canvas_h if self.config.tail[1] <= 1.0 else self.config.tail[1]
             local_tx = tx - self.x()
@@ -372,7 +372,7 @@ class BubbleGraphicsItem(QGraphicsObject):
         self._update_anchor_handle()
 
     def _supports_anchor(self) -> bool:
-        return self.config.type not in ("floating", "none", "sfx", "cloud", "scream", "box")
+        return self.config.type not in ("floating", "none", "patch", "sfx", "cloud", "scream", "box")
 
     def _anchor_angle_deg(self) -> float:
         """Current anchor angle (0=top, clockwise). Auto = direction toward the tail tip."""
@@ -420,7 +420,7 @@ class BubbleGraphicsItem(QGraphicsObject):
         """Re-render bubble pixmap based on current config and tail position."""
         self.prepareGeometryChange()
 
-        has_tail = self.tail_handle.isVisible() and self.config.type not in ("floating", "none", "sfx")
+        has_tail = self.tail_handle.isVisible() and self.config.type not in ("floating", "none", "patch", "sfx")
         tail_local = (int(self.tail_handle.x()), int(self.tail_handle.y())) if has_tail else None
 
         img, offset, body_size = render_single_bubble_local(
@@ -465,6 +465,42 @@ class BubbleGraphicsItem(QGraphicsObject):
         self.config.tail_anchor = None
         self.update_rendering()
         self.changed.emit()
+
+    def flip_tail_horizontal(self) -> bool:
+        """
+        Flip the speech tail direction horizontally (left <-> right) relative to the bubble center.
+        Returns True if the bubble has an active tail that was flipped.
+        """
+        if self.config.type in ("floating", "none", "patch", "sfx") or not self.tail_handle.isVisible():
+            return False
+        pos = self.tail_handle.pos()
+        new_x = -pos.x() if abs(pos.x()) > 1.0 else 40.0
+        self.tail_handle.setPos(new_x, pos.y())
+        if self.config.tail_anchor is not None:
+            self.config.tail_anchor = -self.config.tail_anchor
+        self.sync_config()
+        self.update_rendering()
+        self.changed.emit()
+        return True
+
+    def set_tail_horizontal_dir(self, point_right: bool) -> bool:
+        """
+        Set the horizontal direction of the speech tail explicitly (point_right=True -> +X, False -> -X).
+        Useful for 2-page spread alignment (inward / outward).
+        """
+        if self.config.type in ("floating", "none", "patch", "sfx") or not self.tail_handle.isVisible():
+            return False
+        pos = self.tail_handle.pos()
+        mag_x = abs(pos.x()) if abs(pos.x()) >= 15.0 else 45.0
+        new_x = mag_x if point_right else -mag_x
+        self.tail_handle.setPos(new_x, pos.y())
+        if self.config.tail_anchor is not None:
+            mag_a = abs(self.config.tail_anchor)
+            self.config.tail_anchor = mag_a if point_right else -mag_a
+        self.sync_config()
+        self.update_rendering()
+        self.changed.emit()
+        return True
 
     def on_resize_font_size(self, new_ratio: float, is_final: bool = False):
         """Called when user drags any corner resize handle."""

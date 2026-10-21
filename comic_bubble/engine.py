@@ -142,6 +142,9 @@ def render_scene(scene: SceneConfig) -> Image.Image:
         elif b_type == "box":
             bw = int(t_w * (pad_x if pad_x is not None else 1.45))
             bh = int(t_h * (pad_y if pad_y is not None else 1.20))
+        elif b_type == "patch":
+            bw = max(int(t_w * (pad_x if pad_x is not None else 1.55)), int(t_h * (0.45 if num_cols >= 2 else 0.24)))
+            bh = int(t_h * (pad_y if pad_y is not None else 1.22))
         elif b_type in ("floating", "none"):
             bw = t_w
             bh = t_h
@@ -208,9 +211,14 @@ def render_scene(scene: SceneConfig) -> Image.Image:
         native_rect = (bx1 // scale, by1 // scale, bx2 // scale, by2 // scale)
 
         # Auto-Contrast luminance analysis
-        final_alpha, halo_boost = analyze_background_and_adjust(
-            base_img, native_rect, text_color, item.bg_alpha, item.visibility_mode
-        )
+        if b_type == "patch":
+            final_alpha = item.bg_alpha if item.bg_alpha is not None else 1.0
+            halo_boost = False
+            text_halo = False
+        else:
+            final_alpha, halo_boost = analyze_background_and_adjust(
+                base_img, native_rect, text_color, item.bg_alpha, item.visibility_mode
+            )
 
         fill_color = (item.bg_color[0], item.bg_color[1], item.bg_color[2], int(final_alpha * 255)) if final_alpha > 0 else (0, 0, 0, 0)
         if halo_boost:
@@ -233,6 +241,10 @@ def render_scene(scene: SceneConfig) -> Image.Image:
             draw_hi.polygon(poly, fill=fill_color, outline=border_color, width=border_width)
         elif b_type == "box":
             draw_hi.rectangle(rect, fill=fill_color, outline=border_color, width=border_width)
+        elif b_type == "patch":
+            # Borderless cover patch to blank out existing text inside drawn speech bubbles
+            poly = generate_capsule_polygon(rect, None, corner_radius_ratio=0.42)
+            draw_hi.polygon(poly, fill=fill_color)
         elif b_type in ("floating", "none"):
             # Borderless floating text
             pass

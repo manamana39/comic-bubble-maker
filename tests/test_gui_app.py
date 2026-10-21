@@ -199,6 +199,111 @@ class TestGuiApp(unittest.TestCase):
         vbar.setValue(80)
         self.assertEqual(vbar.value(), 80)
 
+    def test_v065_tail_flip_and_spread_alignment(self):
+        """Test v0.65beta tail horizontal flip (single & batch) and 2-page spread alignment."""
+        win = MainWindow()
+        self.assertIn("0.65beta", win.windowTitle())
+        win.canvas.load_image("input/test_01_infirmary.jpg")
+
+        # Add left-page bubble (cx=0.25) with tail pointing left (tx=0.15)
+        cfg_left = BubbleConfig(
+            text="左ページ",
+            type="capsule",
+            center=(0.25, 0.30),
+            tail=(0.15, 0.45),
+            tail_anchor=-135.0
+        )
+        b_left = win.canvas.add_bubble(cfg_left)
+
+        # Add right-page bubble (cx=0.75) with tail pointing right (tx=0.85)
+        cfg_right = BubbleConfig(
+            text="右ページ",
+            type="capsule",
+            center=(0.75, 0.30),
+            tail=(0.85, 0.45),
+            tail_anchor=135.0
+        )
+        b_right = win.canvas.add_bubble(cfg_right)
+
+        # 1. Single tail flip on b_left: tx should mirror across cx=0.25 -> 0.35
+        b_left.flip_tail_horizontal()
+        self.assertAlmostEqual(b_left.config.tail[0], 0.35, places=4)
+        self.assertAlmostEqual(b_left.config.tail_anchor, 135.0, places=4)
+
+        # 2. Batch flip all tails horizontally
+        count = win.canvas.flip_all_tails_horizontal()
+        self.assertEqual(count, 2)
+        self.assertAlmostEqual(b_left.config.tail[0], 0.15, places=4)
+        self.assertAlmostEqual(b_right.config.tail[0], 0.65, places=4)
+
+        # 3. Spread inward alignment: left half (<0.5) points right (>cx), right half (>=0.5) points left (<cx)
+        win.canvas.align_tails_for_spread("inward")
+        self.assertGreater(b_left.config.tail[0], b_left.config.center[0])
+        self.assertLess(b_right.config.tail[0], b_right.config.center[0])
+
+        # 4. Spread outward alignment: left half points left (<cx), right half points right (>cx)
+        win.canvas.align_tails_for_spread("outward")
+        self.assertLess(b_left.config.tail[0], b_left.config.center[0])
+        self.assertGreater(b_right.config.tail[0], b_right.config.center[0])
+
+    def test_v065_patch_bubble_and_text_cleaner(self):
+        """Test v0.65beta non-destructive cover patch (type='patch') and text cleaner with undo."""
+        from PIL import Image, ImageDraw
+        from PySide6.QtCore import QRectF
+        from comic_bubble.cleaner import clean_bubble_text_in_region, sample_bubble_paper_color
+
+        # Create synthetic manga image with a speech bubble (black border, white interior, black text pixels inside)
+        img = Image.new("RGB", (400, 300), (180, 180, 180))
+        draw = ImageDraw.Draw(img)
+        # Draw bubble oval with thick black outline and warm-white paper fill
+        draw.ellipse([100, 50, 300, 250], fill=(252, 250, 245), outline=(20, 20, 20), width=4)
+        # Draw dark "dialogue text" strokes inside the bubble (not touching border)
+        draw.rectangle([185, 95, 195, 200], fill=(15, 15, 15))
+        draw.rectangle([205, 105, 215, 190], fill=(15, 15, 15))
+
+        # 1. Test paper color sampling
+        paper_rgb = sample_bubble_paper_color(img, (140, 80, 260, 220))
+        self.assertGreaterEqual(paper_rgb[0], 245)
+
+        # 2. Test clean_bubble_text_in_region preserves outer border and erases interior text
+        cleaned_img, detected_rgb = clean_bubble_text_in_region(img, (140, 80, 260, 220))
+        # Center where dark text was (190, 150) should now be bright paper color
+        px_after = cleaned_img.getpixel((190, 150))
+        self.assertGreater(px_after[0], 240)
+        # Bubble border at (101, 150) should still be dark
+        px_border = cleaned_img.getpixel((101, 150))
+        self.assertLess(px_border[0], 50)
+
+        # 3. Test canvas clean_region_and_place_bubble + Ctrl+Z undo
+        win = MainWindow()
+        win.canvas.load_image_from_pil(img, "synthetic_bubble.png")
+        new_item = win.canvas.clean_region_and_place_bubble(QRectF(140, 80, 120, 140))
+        self.assertIsNotNone(new_item)
+        self.assertEqual(new_item.config.type, "none")
+        self.assertEqual(len(win.canvas._image_undo_stack), 1)
+        # Verify canvas pixel was cleaned
+        self.assertGreater(win.canvas.base_pil_image.getpixel((190, 150))[0], 240)
+
+        # Undo should restore the dark text pixel
+        undone = win.canvas.undo_last_clean()
+        self.assertTrue(undone)
+        self.assertLess(win.canvas.base_pil_image.getpixel((190, 150))[0], 50)
+
+        # 4. Test type="patch" rendering and inspector checkbox toggle
+        win.inspector.set_item(new_item)
+        win.inspector.chk_cover_old_text.setChecked(True)
+        self.assertEqual(new_item.config.type, "patch")
+        self.assertEqual(new_item.config.bg_alpha, 1.0)
+
+        # Render full scene with patch bubble
+        scene = SceneConfig(
+            image_path=win.canvas.base_pil_image,
+            bubbles=win.canvas.get_all_bubble_configs(),
+            supersample_scale=1
+        )
+        rendered = render_scene(scene)
+        self.assertEqual(rendered.size, (400, 300))
+
 if __name__ == "__main__":
     unittest.main()
 

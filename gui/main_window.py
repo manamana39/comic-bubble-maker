@@ -83,8 +83,13 @@ class MainWindow(QMainWindow):
         self.canvas.bubble_selected.connect(self.inspector.set_item)
         self.canvas.image_loaded.connect(self._on_image_loaded)
         self.canvas.scene_modified.connect(self._update_status)
+        self.canvas.clean_mode_changed.connect(self._on_clean_mode_changed)
+        self.canvas.text_cleaned.connect(self._on_text_cleaned)
         self.inspector.delete_requested.connect(self._delete_selected_bubble)
         self.inspector.duplicate_requested.connect(self._duplicate_selected_bubble)
+        self.inspector.flip_all_tails_requested.connect(self._flip_all_tails)
+        self.inspector.spread_align_requested.connect(self._align_spread_tails)
+        self.inspector.sample_paper_color_requested.connect(self._sample_paper_color_for_selected)
 
         # Apply dark modern theme styling
         self._apply_theme()
@@ -240,6 +245,26 @@ class MainWindow(QMainWindow):
         self.act_ai_auto = QAction("🤖 空き領域自動配置 (数理)", self)
         self.act_ai_auto.triggered.connect(self._ai_auto_placement)
 
+        # Clean Text & Tail Batch Actions
+        self.act_clean_text = QAction("🧹 セリフ白抜き", self)
+        self.act_clean_text.setCheckable(True)
+        self.act_clean_text.setShortcut(QKeySequence("Ctrl+Shift+B"))
+        self.act_clean_text.toggled.connect(self._toggle_clean_text_mode)
+
+        self.act_undo_clean = QAction("↩ 白抜きを元に戻す", self)
+        self.act_undo_clean.setShortcut(QKeySequence("Ctrl+Z"))
+        self.act_undo_clean.triggered.connect(self._undo_last_clean)
+
+        self.act_flip_all_tails = QAction("⇄ 全しっぽ一括反転", self)
+        self.act_flip_all_tails.setShortcut(QKeySequence("Ctrl+Shift+F"))
+        self.act_flip_all_tails.triggered.connect(self._flip_all_tails)
+
+        self.act_spread_inward = QAction("↘↙ 見開き内向きに揃える", self)
+        self.act_spread_inward.triggered.connect(lambda: self._align_spread_tails("inward"))
+
+        self.act_spread_outward = QAction("↙↘ 見開き外向きに揃える", self)
+        self.act_spread_outward.triggered.connect(lambda: self._align_spread_tails("outward"))
+
         # View Actions
         self.act_fit = QAction("🔍 全体表示", self)
         self.act_fit.setShortcut(QKeySequence("Ctrl+0"))
@@ -278,6 +303,13 @@ class MainWindow(QMainWindow):
         self.menu_edit.addAction(self.act_add_monologue)
         self.menu_edit.addAction(self.act_add_sfx)
         self.menu_edit.addAction(self.act_sfx_palette)
+        self.menu_edit.addSeparator()
+        self.menu_edit.addAction(self.act_clean_text)
+        self.menu_edit.addAction(self.act_undo_clean)
+        self.menu_edit.addSeparator()
+        self.menu_edit.addAction(self.act_flip_all_tails)
+        self.menu_edit.addAction(self.act_spread_inward)
+        self.menu_edit.addAction(self.act_spread_outward)
         self.menu_edit.addSeparator()
         self.menu_edit.addAction(self.act_ai_dialogue)
         self.menu_edit.addAction(self.act_ai_auto)
@@ -335,6 +367,9 @@ class MainWindow(QMainWindow):
         self.toolbar.addAction(self.act_add_sfx)
         self.toolbar.addAction(self.act_sfx_palette)
         self.toolbar.addSeparator()
+        self.toolbar.addAction(self.act_clean_text)
+        self.toolbar.addAction(self.act_flip_all_tails)
+        self.toolbar.addSeparator()
         self.toolbar.addAction(self.act_ai_dialogue)
         self.toolbar.addAction(self.act_ai_settings)
         self.toolbar.addSeparator()
@@ -389,7 +424,7 @@ class MainWindow(QMainWindow):
 
     def retranslate_ui(self):
         """Update window title, menu texts, actions, and status bar according to current language."""
-        self.setWindowTitle(tr("スピーチバブルメーカー (Comic Bubble Maker) v0.6-beta", "Comic Bubble Maker v0.6-beta"))
+        self.setWindowTitle(tr("スピーチバブルメーカー (Comic Bubble Maker) v0.65beta", "Comic Bubble Maker v0.65beta"))
 
         # Menus
         if hasattr(self, "menu_file"):
@@ -449,6 +484,33 @@ class MainWindow(QMainWindow):
         if hasattr(self, "act_ai_auto"):
             self.act_ai_auto.setText(tr("🤖 空き領域自動配置 (数理)", "🤖 Auto Placement (Geometric)"))
             self.act_ai_auto.setToolTip(tr("背景の空きスペースを幾何学的に解析して吹き出しを配置", "Analyze safe background space and place bubble"))
+        if hasattr(self, "act_clean_text"):
+            self.act_clean_text.setText(tr("🧹 セリフ白抜き", "🧹 Clean Text"))
+            self.act_clean_text.setToolTip(
+                tr("ドラッグで囲んだ既存吹き出し内の文字だけを消去し、新しいセリフ枠を配置 (Ctrl+Shift+B)",
+                   "Drag over an existing bubble to erase old dialogue text and place a new text item (Ctrl+Shift+B)")
+            )
+        if hasattr(self, "act_undo_clean"):
+            self.act_undo_clean.setText(tr("↩ 白抜きを元に戻す", "↩ Undo Clean Text"))
+            self.act_undo_clean.setToolTip(tr("直前のセリフ白抜き消去を元に戻す (Ctrl+Z)", "Undo the last text clean operation (Ctrl+Z)"))
+        if hasattr(self, "act_flip_all_tails"):
+            self.act_flip_all_tails.setText(tr("⇄ 全しっぽ反転", "⇄ Flip All Tails"))
+            self.act_flip_all_tails.setToolTip(
+                tr("すべての吹き出しのしっぽの左右の向きを一括で反転します (Ctrl+Shift+F)",
+                   "Flip horizontal tail direction for all speech bubbles (Ctrl+Shift+F)")
+            )
+        if hasattr(self, "act_spread_inward"):
+            self.act_spread_inward.setText(tr("↘↙ 見開き内向きに揃える", "↘↙ Align Spread Inward"))
+            self.act_spread_inward.setToolTip(
+                tr("見開き用: 左半分のしっぽを右向き、右半分のしっぽを左向き(中央方向)に揃えます",
+                   "2-Page Spread: Point left-side tails right and right-side tails left (toward center)")
+            )
+        if hasattr(self, "act_spread_outward"):
+            self.act_spread_outward.setText(tr("↙↘ 見開き外向きに揃える", "↙↘ Align Spread Outward"))
+            self.act_spread_outward.setToolTip(
+                tr("見開き用: 左半分のしっぽを左向き、右半分のしっぽを右向き(外側方向)に揃えます",
+                   "2-Page Spread: Point left-side tails left and right-side tails right (outward)")
+            )
 
         if hasattr(self, "act_fit"):
             self.act_fit.setText(tr("🔍 全体表示", "🔍 Fit to View"))
@@ -715,6 +777,94 @@ class MainWindow(QMainWindow):
                 new_cfg.tail = (new_cfg.tail[0] + 0.04, new_cfg.tail[1] + 0.04)
             self.canvas.add_bubble(new_cfg)
 
+    def _toggle_clean_text_mode(self, checked: bool):
+        """Toggle the rubber-band text cleaner tool on the canvas."""
+        if checked and not self.canvas.base_pil_image:
+            self.act_clean_text.blockSignals(True)
+            self.act_clean_text.setChecked(False)
+            self.act_clean_text.blockSignals(False)
+            QMessageBox.information(
+                self,
+                tr("画像が必要です", "Image Required"),
+                tr("先にイラスト・漫画画像を開いてください。", "Please open an image first.")
+            )
+            return
+        self.canvas.set_clean_text_mode(checked)
+
+    def _on_clean_mode_changed(self, active: bool):
+        if hasattr(self, "act_clean_text") and self.act_clean_text.isChecked() != active:
+            self.act_clean_text.blockSignals(True)
+            self.act_clean_text.setChecked(active)
+            self.act_clean_text.blockSignals(False)
+        if active:
+            self.status_bar.showMessage(
+                tr("🧹 セリフ白抜きモード: 消したい吹き出し内のセリフをドラッグで囲んでください (Escで解除)",
+                   "🧹 Clean Text Mode: Drag around existing dialogue inside a bubble to erase & replace (Esc to cancel)"),
+                10000
+            )
+        else:
+            self._update_status()
+
+    def _on_text_cleaned(self, count: int = 1):
+        self.status_bar.showMessage(
+            tr("🧹 元のセリフを白抜き消去し、新しいセリフ枠を配置しました！ (Ctrl+Z で元に戻せます)",
+               "🧹 Erased original text and placed a new dialogue item! (Press Ctrl+Z to undo)"),
+            6000
+        )
+
+    def _undo_last_clean(self):
+        if self.canvas.undo_last_clean():
+            self.status_bar.showMessage(
+                tr("↩ 直前のセリフ白抜きを元に戻しました", "↩ Undid last text clean operation"),
+                4000
+            )
+
+    def _flip_all_tails(self):
+        cnt = self.canvas.flip_all_tails_horizontal()
+        if cnt > 0:
+            if self.canvas.current_selected_bubble:
+                self.inspector.set_item(self.canvas.current_selected_bubble)
+            self.status_bar.showMessage(
+                tr(f"⇄ {cnt}個の吹き出しのしっぽを左右反転しました",
+                   f"⇄ Flipped tails horizontally for {cnt} bubbles"),
+                4000
+            )
+        else:
+            self.status_bar.showMessage(
+                tr("反転できるしっぽ付き吹き出しがありません", "No bubbles with tails to flip"),
+                3000
+            )
+
+    def _align_spread_tails(self, mode: str):
+        cnt = self.canvas.align_tails_for_spread(mode)
+        if cnt > 0:
+            if self.canvas.current_selected_bubble:
+                self.inspector.set_item(self.canvas.current_selected_bubble)
+            label_ja = "見開き内向き(↘↙)" if mode == "inward" else "見開き外向き(↙↘)"
+            label_en = "inward (↘↙)" if mode == "inward" else "outward (↙↘)"
+            self.status_bar.showMessage(
+                tr(f"📖 {cnt}個のしっぽを{label_ja}に一括整列しました",
+                   f"📖 Aligned {cnt} tails {label_en} for spread"),
+                4000
+            )
+        else:
+            self.status_bar.showMessage(
+                tr("整列できるしっぽ付き吹き出しがありません", "No bubbles with tails to align"),
+                3000
+            )
+
+    def _sample_paper_color_for_selected(self):
+        cur = self.canvas.current_selected_bubble
+        if not cur or not self.canvas.base_pil_image:
+            return
+        rgb = self.canvas.sample_paper_color_for_bubble(cur)
+        self.inspector.set_item(cur)
+        self.status_bar.showMessage(
+            tr(f"🎨 吹き出しの下地色を取得しました: RGB{rgb}",
+               f"🎨 Sampled bubble paper color: RGB{rgb}"),
+            4000
+        )
+
     def _on_image_loaded(self, path: str, w: int, h: int):
         fname = os.path.basename(path)
         self.lbl_status_info.setText(tr(f"画像: {fname} ({w} × {h} px)", f"Image: {fname} ({w} × {h} px)"))
@@ -737,23 +887,25 @@ class MainWindow(QMainWindow):
     def _show_about(self):
         title = tr("Comic Bubble Maker について", "About Comic Bubble Maker")
         body = tr(
-            "<h3>Comic Bubble Maker v0.6-beta</h3>"
+            "<h3>Comic Bubble Maker v0.65beta</h3>"
             "<p>プロフェッショナルな漫画吹き出し・セリフ作成デスクトップアプリ</p>"
             "<ul>"
             "<li><b>AIフリー完全マニュアル編集</b>: 吹き出しやしっぽ（先端・発生位置）をマウスで自由自在に配置</li>"
+            "<li><b>しっぽ一括反転・見開き整列</b>: 個別/全体のしっぽ左右反転や見開き内向き・外向き一括整列に対応</li>"
+            "<li><b>既存セリフ白抜き＆上書きパッチ</b>: 元画像の吹き出し内の文字だけを消去して新セリフに差し替え可能</li>"
             "<li><b>縦書き自動組版</b>: 禁則処理、約物回転、左右行進行切り替え(RTL/LTR)、小声・強調タグ対応</li>"
-            "<li><b>枠なし浮遊モノローグ</b>: 光彩(Halo)で背景に溶け込む演出</li>"
-            "<li><b>オノマトペ(SFX)</b>: 描き文字の回転・縁取り・カラーパレット・ドロップシャドウ</li>"
+            "<li><b>オノマトペ(SFX) 78種プリセット</b>: 描き文字の回転・縁取り・カラーパレット・ドロップシャドウ</li>"
             "<li><b>超解像3xエクスポート</b>: 印刷・公開品質の滑らかな線画レンダリング</li>"
             "<li><b>バイリンガル対応</b>: 日本語 / English 切り替え可能</li>"
             "</ul>",
-            "<h3>Comic Bubble Maker v0.6-beta</h3>"
+            "<h3>Comic Bubble Maker v0.65beta</h3>"
             "<p>Professional Manga Speech Bubble & Dialogue Editor</p>"
             "<ul>"
             "<li><b>Fully Manual & AI-Assisted</b>: Freely position bubbles and tails (tip & origin anchor) with mouse.</li>"
+            "<li><b>Tail Batch Flip & Spread Alignment</b>: Flip individual or all tails horizontally, or align for 2-page spreads.</li>"
+            "<li><b>Existing Dialogue Cleaner & Cover Patch</b>: Erase old bubble text or cover it non-destructively to insert new lines.</li>"
             "<li><b>Japanese Vertical Typography</b>: Kinsoku-shori, symbol rotation, RTL/LTR flow toggle, whisper tags.</li>"
-            "<li><b>Borderless Monologue</b>: Soft halo glow effect that blends seamlessly into artwork.</li>"
-            "<li><b>Onomatopoeia (SFX)</b>: Rotate, outline stroke, color palette, and drop shadow.</li>"
+            "<li><b>Onomatopoeia (SFX) 78 Presets</b>: Rotate, outline stroke, color palette, and drop shadow.</li>"
             "<li><b>High-Res 3x Super-Sampling Export</b>: Crisp print-grade line art rendering.</li>"
             "<li><b>Bilingual UI</b>: Switch effortlessly between Japanese and English.</li>"
             "</ul>"

@@ -64,7 +64,9 @@ def render_single_bubble_local(
     bg_color = bubble.bg_color
 
     # Determine background alpha
-    if bubble.bg_alpha is not None:
+    if b_type == "patch":
+        alpha = int((bubble.bg_alpha if bubble.bg_alpha is not None else 1.0) * 255)
+    elif bubble.bg_alpha is not None:
         alpha = int(bubble.bg_alpha * 255)
     elif bubble.visibility_mode == "transparent":
         alpha = 180
@@ -152,6 +154,9 @@ def render_single_bubble_local(
     elif b_type == "box":
         bw = int(t_w * (pad_x if pad_x is not None else 1.45))
         bh = int(t_h * (pad_y if pad_y is not None else 1.20))
+    elif b_type == "patch":
+        bw = max(int(t_w * (pad_x if pad_x is not None else 1.55)), int(t_h * (0.45 if num_cols >= 2 else 0.24)))
+        bh = int(t_h * (pad_y if pad_y is not None else 1.22))
     elif b_type in ("floating", "none"):
         bw = t_w + 20 * scale
         bh = t_h + 20 * scale
@@ -182,7 +187,7 @@ def render_single_bubble_local(
 
     # Tail handling (tail_local in scaled coordinates)
     scaled_tail = None
-    if tail_local is not None and b_type not in ("floating", "none", "sfx"):
+    if tail_local is not None and b_type not in ("floating", "none", "patch", "sfx"):
         scaled_tail = (int(tail_local[0] * scale), int(tail_local[1] * scale))
 
     # Bounding box encompassing body and tail
@@ -242,6 +247,9 @@ def render_single_bubble_local(
         draw_hi.polygon(poly, fill=fill_color, outline=border_color, width=border_width)
     elif b_type == "box":
         draw_hi.rectangle(canvas_rect, fill=fill_color, outline=border_color, width=border_width)
+    elif b_type == "patch":
+        poly = generate_capsule_polygon(canvas_rect, None, corner_radius_ratio=0.42)
+        draw_hi.polygon(poly, fill=fill_color)
     elif b_type in ("floating", "none"):
         pass
     else:  # capsule

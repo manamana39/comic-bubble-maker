@@ -95,6 +95,9 @@ class BubbleInspectorPanel(QWidget):
     bubble_updated = Signal()
     delete_requested = Signal()
     duplicate_requested = Signal()
+    flip_all_tails_requested = Signal()
+    spread_align_requested = Signal(str)
+    sample_paper_color_requested = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -196,6 +199,7 @@ class BubbleInspectorPanel(QWidget):
         self.combo_type.addItem("角丸四角 (ナレーション)", "box")
         self.combo_type.addItem("枠なし浮遊モノローグ (心の声)", "floating")
         self.combo_type.addItem("既存枠利用 (枠・背景なし)", "none")
+        self.combo_type.addItem("既存枠の文字隠し (枠なし・下地塗り)", "patch")
         self.combo_type.addItem("描き文字/オノマトペ (SFX)", "sfx")
         self.combo_type.currentIndexChanged.connect(self._on_type_changed)
         row_type.addWidget(self.combo_type, 1)
@@ -205,6 +209,16 @@ class BubbleInspectorPanel(QWidget):
         self.chk_hide_frame.setToolTip("イラスト内に既に描かれている吹き出しの中に文字だけを配置したい場合にチェックします。")
         self.chk_hide_frame.toggled.connect(self._on_hide_frame_toggled)
         vbox_style.addWidget(self.chk_hide_frame)
+
+        self.chk_cover_old_text = QCheckBox("元の文字を下地色で隠す")
+        self.chk_cover_old_text.setToolTip("既存の吹き出し内に文字が入っている場合、枠線なしで背景色（白など）を塗りつぶして元の文字を隠します。")
+        self.chk_cover_old_text.toggled.connect(self._on_cover_old_text_toggled)
+        vbox_style.addWidget(self.chk_cover_old_text)
+
+        self.btn_sample_paper = QPushButton("💧 下地色を自動取得")
+        self.btn_sample_paper.setToolTip("配置した場所の周囲から元の吹き出しの紙の色（白・クリーム色など）を自動でスポイト取得します。")
+        self.btn_sample_paper.clicked.connect(self._on_sample_paper_clicked)
+        vbox_style.addWidget(self.btn_sample_paper)
 
         # Font
         row_font = QHBoxLayout()
@@ -417,6 +431,36 @@ class BubbleInspectorPanel(QWidget):
         self.chk_tail.toggled.connect(self._on_tail_toggled)
         vbox_tail.addWidget(self.chk_tail)
 
+        row_tail_flip = QHBoxLayout()
+        row_tail_flip.setSpacing(4)
+        self.btn_flip_tail = QPushButton("⇄ しっぽ反転")
+        self.btn_flip_tail.setStyleSheet("padding: 4px 4px; font-size: 11px;")
+        self.btn_flip_tail.setToolTip("選択中の吹き出しのしっぽの向きを左右反転します")
+        self.btn_flip_tail.clicked.connect(self._on_flip_single_tail)
+        row_tail_flip.addWidget(self.btn_flip_tail)
+
+        self.btn_flip_all_tails = QPushButton("⇄ 全しっぽ反転")
+        self.btn_flip_all_tails.setStyleSheet("padding: 4px 4px; font-size: 11px;")
+        self.btn_flip_all_tails.setToolTip("キャンバス上のすべての吹き出しのしっぽの向きを一括で左右反転します (Ctrl+Shift+F)")
+        self.btn_flip_all_tails.clicked.connect(self.flip_all_tails_requested.emit)
+        row_tail_flip.addWidget(self.btn_flip_all_tails)
+        vbox_tail.addLayout(row_tail_flip)
+
+        row_spread = QHBoxLayout()
+        row_spread.setSpacing(4)
+        self.btn_spread_inward = QPushButton("↘↙ 見開き内向")
+        self.btn_spread_inward.setStyleSheet("padding: 4px 4px; font-size: 11px;")
+        self.btn_spread_inward.setToolTip("見開き用: 左側の吹き出しは右向き(↘)、右側の吹き出しは左向き(↙)に一括整列します")
+        self.btn_spread_inward.clicked.connect(lambda: self.spread_align_requested.emit("inward"))
+        row_spread.addWidget(self.btn_spread_inward)
+
+        self.btn_spread_outward = QPushButton("↙↘ 見開き外向")
+        self.btn_spread_outward.setStyleSheet("padding: 4px 4px; font-size: 11px;")
+        self.btn_spread_outward.setToolTip("見開き用: 左側の吹き出しは左向き(↙)、右側の吹き出しは右向き(↘)に一括整列します")
+        self.btn_spread_outward.clicked.connect(lambda: self.spread_align_requested.emit("outward"))
+        row_spread.addWidget(self.btn_spread_outward)
+        vbox_tail.addLayout(row_spread)
+
         self.lbl_tail_tip = QLabel("💡 オレンジの丸: しっぽの先端（向き・長さ）。水色の四角: しっぽが出る位置。どちらもキャンバス上でドラッグできます。")
         self.lbl_tail_tip.setStyleSheet("color: #888; font-size: 11px;")
         self.lbl_tail_tip.setWordWrap(True)
@@ -581,7 +625,10 @@ class BubbleInspectorPanel(QWidget):
         idx = self.combo_type.findData(b_type)
         if idx >= 0:
             self.combo_type.setCurrentIndex(idx)
-        self.chk_hide_frame.setChecked(b_type == "none")
+        self.chk_hide_frame.setChecked(b_type in ("none", "patch"))
+        self.chk_cover_old_text.setChecked(b_type == "patch")
+        self.chk_cover_old_text.setVisible(b_type in ("none", "patch"))
+        self.btn_sample_paper.setVisible(b_type == "patch")
 
         # 3. Font
         f_idx = self.combo_font.findData(cfg.font)
@@ -611,19 +658,19 @@ class BubbleInspectorPanel(QWidget):
             self.palette_stroke.set_rgba(cfg.stroke_color)
 
         # 6. Tail
-        has_tail = item.tail_handle.isVisible() and b_type not in ("floating", "none", "sfx")
+        has_tail = item.tail_handle.isVisible() and b_type not in ("floating", "none", "patch", "sfx")
         self.chk_tail.setChecked(has_tail)
-        self.grp_tail.setVisible(b_type not in ("floating", "none", "sfx"))
+        self.grp_tail.setVisible(b_type not in ("floating", "none", "patch", "sfx"))
 
         # 7. Opacity
         self.chk_auto_contrast.setChecked(cfg.visibility_mode == "auto")
         if cfg.bg_alpha is not None:
             op_val = int(cfg.bg_alpha * 100)
         else:
-            op_val = 90
+            op_val = 100 if b_type == "patch" else 90
         self.slider_opacity.setValue(op_val)
         self.lbl_opacity.setText(f"{op_val}%")
-        self.slider_opacity.setEnabled(cfg.visibility_mode != "auto")
+        self.slider_opacity.setEnabled(cfg.visibility_mode != "auto" or b_type == "patch")
 
         # 8. Colors & Border
         self.btn_bg_col.set_rgba(cfg.bg_color)
@@ -635,7 +682,7 @@ class BubbleInspectorPanel(QWidget):
         bw_val = max(1, min(12, int(round(cfg.border_width))))
         self.slider_border_w.setValue(bw_val)
         self.lbl_border_w.setText(f"{bw_val}px")
-        self.row_border_w.setVisible(b_type not in ("floating", "none", "sfx"))
+        self.row_border_w.setVisible(b_type not in ("floating", "none", "patch", "sfx"))
 
         self._load_fx_controls(cfg)
         self.grp_pad.setVisible(b_type not in ("floating", "none", "sfx"))
@@ -677,21 +724,33 @@ class BubbleInspectorPanel(QWidget):
             return
         new_type = self.combo_type.currentData()
         self.current_item.config.type = new_type
-        if new_type in ("floating", "none", "sfx"):
+        if new_type in ("floating", "none", "patch", "sfx"):
             self.current_item.set_has_tail(False)
             self.chk_tail.setChecked(False)
             self.grp_tail.setVisible(False)
         else:
             self.grp_tail.setVisible(True)
 
+        if new_type == "patch":
+            self.current_item.config.bg_alpha = 1.0
+            self.current_item.config.text_halo = False
+            self.sample_paper_color_requested.emit()
+            self.btn_bg_col.set_rgba(self.current_item.config.bg_color)
+
         self.widget_direction.setVisible(new_type != "sfx")
         self.grp_sfx.setVisible(new_type == "sfx")
-        self.row_border_w.setVisible(new_type not in ("floating", "none", "sfx"))
+        self.row_border_w.setVisible(new_type not in ("floating", "none", "patch", "sfx"))
         self.grp_pad.setVisible(new_type not in ("floating", "none", "sfx"))
 
         self.chk_hide_frame.blockSignals(True)
-        self.chk_hide_frame.setChecked(new_type == "none")
+        self.chk_hide_frame.setChecked(new_type in ("none", "patch"))
         self.chk_hide_frame.blockSignals(False)
+
+        self.chk_cover_old_text.blockSignals(True)
+        self.chk_cover_old_text.setChecked(new_type == "patch")
+        self.chk_cover_old_text.setVisible(new_type in ("none", "patch"))
+        self.chk_cover_old_text.blockSignals(False)
+        self.btn_sample_paper.setVisible(new_type == "patch")
 
         self._apply_change()
 
@@ -699,13 +758,40 @@ class BubbleInspectorPanel(QWidget):
         if self._block_signals or not self.current_item:
             return
         if checked:
-            idx = self.combo_type.findData("none")
+            target_type = "patch" if self.chk_cover_old_text.isChecked() else "none"
+            idx = self.combo_type.findData(target_type)
             if idx >= 0:
                 self.combo_type.setCurrentIndex(idx)
         else:
             idx = self.combo_type.findData("capsule")
             if idx >= 0:
                 self.combo_type.setCurrentIndex(idx)
+
+    def _on_cover_old_text_toggled(self, checked: bool):
+        if self._block_signals or not self.current_item:
+            return
+        target_type = "patch" if checked else "none"
+        idx = self.combo_type.findData(target_type)
+        if idx >= 0:
+            self.combo_type.setCurrentIndex(idx)
+
+    def _on_sample_paper_clicked(self):
+        if not self.current_item:
+            return
+        self.sample_paper_color_requested.emit()
+        self.btn_bg_col.set_rgba(self.current_item.config.bg_color)
+        self._apply_change()
+
+    def _on_flip_single_tail(self):
+        if not self.current_item:
+            return
+        if not self.current_item.tail_handle.isVisible():
+            self.current_item.set_has_tail(True)
+            self.chk_tail.blockSignals(True)
+            self.chk_tail.setChecked(True)
+            self.chk_tail.blockSignals(False)
+        self.current_item.flip_tail_horizontal()
+        self.bubble_updated.emit()
 
     def _on_font_changed(self, idx: int):
         if self._block_signals or not self.current_item:
@@ -977,6 +1063,9 @@ class BubbleInspectorPanel(QWidget):
         self.lbl_type.setText(tr("形状:", "Shape:"))
         self.chk_hide_frame.setText(tr("既存枠に合わせる (枠なし)", "Fit to existing frame (no outline)"))
         self.chk_hide_frame.setToolTip(tr("イラスト内に既に描かれている吹き出しの中に文字だけを配置したい場合にチェックします。", "Check if speech bubble is already drawn inside the image."))
+        self.chk_cover_old_text.setText(tr("元の文字を下地色で隠す", "Cover old text with fill"))
+        self.chk_cover_old_text.setToolTip(tr("既存の吹き出し内に文字が入っている場合、枠線なしで背景色（白など）を塗りつぶして元の文字を隠します。", "Fills a borderless patch using background paper color to hide old dialogue inside an existing bubble."))
+        self.btn_sample_paper.setText(tr("💧 下地色を自動取得", "💧 Auto-pick paper color"))
         self.lbl_font.setText(tr("フォント:", "Font:"))
         self.lbl_size.setText(tr("文字サイズ:", "Font Size:"))
         self.lbl_direction.setText(tr("行の進行:", "Text Flow:"))
@@ -990,6 +1079,7 @@ class BubbleInspectorPanel(QWidget):
             ("box", tr("角丸四角 (ナレーション)", "Rounded Box (Narration)")),
             ("floating", tr("枠なし浮遊モノローグ (心の声)", "Floating Monologue (Borderless)")),
             ("none", tr("既存枠利用 (枠・背景なし)", "Use Existing Frame (Text only)")),
+            ("patch", tr("既存枠の文字隠し (枠なし・下地塗り)", "Cover Existing Text (Borderless Fill)")),
             ("sfx", tr("描き文字/オノマトペ (SFX)", "Onomatopoeia / SFX")),
         ]
         prev_block = self._block_signals
@@ -1038,6 +1128,10 @@ class BubbleInspectorPanel(QWidget):
 
         self.grp_tail.setTitle(tr("しっぽ（吹き出しの向き）", "Speech Tail"))
         self.chk_tail.setText(tr("しっぽを表示 (口元へ向ける)", "Show Tail (point to mouth)"))
+        self.btn_flip_tail.setText(tr("⇄ しっぽ反転", "⇄ Flip Tail"))
+        self.btn_flip_all_tails.setText(tr("⇄ 全しっぽ反転", "⇄ Flip All"))
+        self.btn_spread_inward.setText(tr("↘↙ 見開き内向", "↘↙ Inward"))
+        self.btn_spread_outward.setText(tr("↙↘ 見開き外向", "↙↘ Outward"))
         self.lbl_tail_tip.setText(tr("💡 オレンジの丸: しっぽの先端（向き・長さ）。水色の四角: しっぽが出る位置。どちらもキャンバス上でドラッグできます。",
                                     "💡 Orange circle: tail tip (direction/length). Cyan square: tail origin on bubble outline."))
         self.btn_anchor_auto.setText(tr("↺ しっぽの出る位置を自動に戻す", "↺ Reset Tail Origin to Auto"))
